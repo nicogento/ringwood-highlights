@@ -293,6 +293,7 @@ header {
 
       <div id="gemini-key-status" style="font-size:0.72rem;color:var(--muted2);margin-bottom:0.6rem;display:none"></div>
 
+      <button class="btn-sm" onclick="testTextOnly()" style="margin-bottom:0.5rem;width:100%;background:rgba(64,184,100,0.1);border-color:rgba(64,184,100,0.3);color:#40b864;">🧪 Test API (text only)</button>
       <button class="btn-sm" onclick="listGeminiModels()" style="margin-bottom:0.5rem;width:100%;background:rgba(66,133,244,0.1);border-color:rgba(66,133,244,0.3);color:#7aabf0;">🔍 List available models</button>
       <button class="gemini-btn" id="gemini-btn" onclick="runGeminiDetection()" disabled>
         <span>🤖</span> Detect Goals Automatically
@@ -988,6 +989,26 @@ function copyGeminiLog() {
   navigator.clipboard.writeText(text).then(() => alert('Log copied to clipboard!')).catch(() => {
     prompt('Copy this log:', text);
   });
+}
+
+async function testTextOnly() {
+  const prog = document.getElementById('gemini-prog');
+  prog.style.display = 'block';
+  document.getElementById('gemini-log').innerHTML = '';
+  gLog('🧪 Testing text-only generateContent call…');
+  try {
+    const res = await fetch(gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({contents:[{role:'user',parts:[{text:'Say hello in one word'}]}]})
+    });
+    const data = await res.json();
+    if (res.ok) {
+      gLog('✓ Text-only call works: ' + JSON.stringify(data?.candidates?.[0]?.content?.parts?.[0]?.text));
+    } else {
+      gLog('❌ Text-only failed: ' + JSON.stringify(data));
+    }
+  } catch(e) { gLog('❌ ' + e.message); }
 }
 
 async function listGeminiModels() {
