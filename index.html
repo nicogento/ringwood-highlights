@@ -1216,8 +1216,10 @@ Rules:
           { text: prompt }
         ]
       }],
-      generationConfig: { maxOutputTokens: 512 },
-      thinkingConfig: { thinkingBudget: 0 }
+      generationConfig: {
+          maxOutputTokens: 2048,
+          thinkingConfig: { thinkingBudget: 0 }
+        }
     };
     gLog(`  📡 Sending to gemini-2.5-flash — mimeType: ${mimeType}, fileUri: ${fileUri.slice(-30)}`);
     const res = await fetch(
