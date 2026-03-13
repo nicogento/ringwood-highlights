@@ -1221,18 +1221,19 @@ Rules:
 - No other text, no explanations`;
 
   return await withRetry(async () => {
-    // Build request with role field (required by Gemini API)
+    // Build request - fileUri must be https://generativelanguage.googleapis.com/files/<id>
+    const fileUriFixed = fileUri.replace('/v1beta/files/', '/files/');
     const requestBody = {
       contents: [{
         role: 'user',
         parts: [
-          { fileData: { mimeType: mimeType, fileUri: fileUri } },
+          { fileData: { mimeType: mimeType, fileUri: fileUriFixed } },
           { text: prompt }
         ]
       }]
     };
-    gLog(`  📡 Sending to gemini-2.5-flash — mimeType: ${mimeType}, fileUri: ${fileUri}`);
-    gLog(`  📋 Request: ${JSON.stringify(requestBody)}`);
+    gLog(`  📡 Sending to gemini-2.5-flash — fileUri: ${fileUriFixed}`);
+    gLog(`  📋 Full request: ${JSON.stringify(requestBody).slice(0,300)}`);
     const res = await fetch(
       gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`),
       {
