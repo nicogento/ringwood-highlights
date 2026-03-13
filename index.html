@@ -368,7 +368,6 @@ header {
   </div>
 </div>
 </div>
-
 <!-- ═══════════════════════════════════════════════════════════════════════════
      HIDDEN ADMIN PAGE — accessible via URL hash #admin-rtfc
      Laymen never see this. Used by the app owner to configure the API key.
@@ -384,9 +383,19 @@ header {
     </div>
 
     <div style="background:#1c1c1c;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:1.4rem;margin-bottom:1.2rem;">
-      <div style="font-family:'Roboto Condensed',sans-serif;font-size:0.68rem;letter-spacing:0.2em;text-transform:uppercase;color:#cc0000;font-weight:700;margin-bottom:1rem;">Step 1 — Encrypt your API key</div>
+      <div style="font-family:'Roboto Condensed',sans-serif;font-size:0.68rem;letter-spacing:0.2em;text-transform:uppercase;color:#cc0000;font-weight:700;margin-bottom:0.8rem;">Step 1 — Get your Gemini API key</div>
+      <div style="font-size:0.76rem;color:#aaa;line-height:2;margin-bottom:1rem;background:rgba(255,255,255,0.03);border-radius:6px;padding:0.75rem 1rem;">
+        <strong style="color:#f5f5f5">1.</strong> <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#7aabf0">Open Google AI Studio</a> and sign in with your Google account<br>
+        <strong style="color:#f5f5f5">2.</strong> Click <strong style="color:#f5f5f5">"Create API key"</strong><br>
+        <strong style="color:#f5f5f5">3.</strong> Click your project name at the top → <a href="https://console.cloud.google.com/billing" target="_blank" style="color:#7aabf0">Set up billing</a> (add a card — costs pennies per match)<br>
+        <strong style="color:#f5f5f5">4.</strong> Copy your API key and paste it below
+      </div>
+      <div style="font-family:'Roboto Condensed',sans-serif;font-size:0.68rem;letter-spacing:0.2em;text-transform:uppercase;color:#cc0000;font-weight:700;margin-bottom:0.8rem;">Step 2 — Encrypt &amp; save</div>
       <label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.3rem">Your Gemini API key</label>
-      <input id="adm-api-key" type="password" placeholder="AIza…" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:0.55rem 0.75rem;color:#f5f5f5;font-size:0.88rem;outline:none;margin-bottom:0.8rem;">
+      <div style="display:flex;gap:0.4rem;margin-bottom:0.8rem;">
+        <input id="adm-api-key" type="password" placeholder="AIza…" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:0.55rem 0.75rem;color:#f5f5f5;font-size:0.88rem;outline:none;">
+        <button onclick="var i=document.getElementById('adm-api-key');i.type=i.type==='password'?'text':'password'" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#888;cursor:pointer;padding:0 0.7rem;font-size:0.9rem;">👁</button>
+      </div>
       <label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.3rem">Choose an encryption password</label>
       <input id="adm-password" type="password" placeholder="Something memorable…" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:0.55rem 0.75rem;color:#f5f5f5;font-size:0.88rem;outline:none;margin-bottom:0.8rem;">
       <label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.3rem">Confirm password</label>
