@@ -875,7 +875,7 @@ function trimMp4(srcBuffer, startSec, endSec, log) {
 // ═══════════════════════════════════════
 // GEMINI GOAL DETECTION
 // ═══════════════════════════════════════
-const CHUNK_SIZE    = 19 * 1024 * 1024; // 19MB — safely under 20MB limit
+const CHUNK_SIZE    = 95 * 1024 * 1024; // 95MB — safely under 100MB limit
 const CHUNK_OVERLAP_S = 30;             // overlap seconds to catch boundary goals
 const GEMINI_DIRECT = 'https://generativelanguage.googleapis.com';
 
@@ -1210,7 +1210,7 @@ Rules:
 
   return await withRetry(async () => {
     const res = await fetch(
-      gUrl(`/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`),
+      gUrl(`/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent?key=${geminiKey}`),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
