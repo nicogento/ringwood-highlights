@@ -306,7 +306,6 @@ header {
     <div class="panel">
       <div class="ptitle">Step 2 — Goal Timestamps</div>
       <div class="psub">Gemini auto-fills these after detection — goals are added to the timeline straight away. Add any timestamps Gemini missed here, then click "Add ▶".</div>
-      <div class="ts-tip">💡 Ask <strong>Gemini</strong>: <em>"List every goal timestamp in mm:ss format"</em></div>
       <div id="ts-list"></div>
       <button class="add-ts" onclick="addTsRow()">+ Add timestamp</button>
     </div>
@@ -970,7 +969,7 @@ const HARDCODED_ENC_PASS = ''; // The password you chose in the admin page
   // No key configured at all — show a subtle notice (only admins will see this)
   const statusEl = document.getElementById('gemini-key-status');
   if (statusEl) {
-    statusEl.textContent = '⚙ Gemini AI not configured — press Ctrl+Shift+K to set up';
+    statusEl.textContent = '⚙ Gemini AI not configured — click the badge 5 times to set up';
     statusEl.style.display = 'block';
   }
   checkGeminiReady();
@@ -1606,20 +1605,25 @@ function hideAdminPanel() {
   const el = document.getElementById('admin-page');
   if (el) el.style.display = 'none';
 }
-// Secret keyboard shortcut: Ctrl+Shift+A
-document.addEventListener('keydown', function(e) {
-  if (e.ctrlKey && e.shiftKey && e.key === 'K') {
-    e.preventDefault();
-    showAdminPanel();
-  }
-});
-// Also support URL hash for direct linking
-document.addEventListener('DOMContentLoaded', function() {
-  if (location.hash.toLowerCase() === '#admin-rtfc') showAdminPanel();
-});
-window.addEventListener('hashchange', function() {
-  if (location.hash.toLowerCase() === '#admin-rtfc') showAdminPanel();
-});
+// Secret trigger: click the club badge 5 times within 3 seconds
+(function() {
+  let clicks = 0, timer = null;
+  document.addEventListener('DOMContentLoaded', function() {
+    const badge = document.getElementById('club-badge');
+    if (!badge) return;
+    badge.style.cursor = 'pointer';
+    badge.addEventListener('click', function() {
+      clicks++;
+      if (timer) clearTimeout(timer);
+      if (clicks >= 5) {
+        clicks = 0;
+        showAdminPanel();
+      } else {
+        timer = setTimeout(function() { clicks = 0; }, 3000);
+      }
+    });
+  });
+})();
 
 async function adminEncrypt() {
   const apiKey = document.getElementById('adm-api-key').value.trim();
