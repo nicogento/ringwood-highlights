@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RTFC Admin — Gemini Setup</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d0d0d; color: #f5f5f5; font-family: Arial, sans-serif; min-height: 100vh; padding: 2rem; }
+.wrap { max-width: 540px; margin: 0 auto; }
+.header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #cc0000; }
+.header h1 { font-size: 1.2rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.header p  { font-size: 0.72rem; color: #888; margin-top: 0.2rem; }
+.card { background: #1c1c1c; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 1.4rem; margin-bottom: 1.2rem; }
+.card-title { font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; color: #cc0000; font-weight: 700; margin-bottom: 0.9rem; }
+label { font-size: 0.75rem; color: #888; display: block; margin-bottom: 0.3rem; margin-top: 0.75rem; }
+label:first-of-type { margin-top: 0; }
+.row { display: flex; gap: 0.4rem; }
+input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.6rem 0.8rem; color: #f5f5f5; font-size: 0.88rem; outline: none; transition: border-color 0.2s; }
+input:focus { border-color: rgba(204,0,0,0.5); }
+.flex { flex: 1; width: auto; }
+.eye { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; color: #888; cursor: pointer; padding: 0 0.8rem; font-size: 0.95rem; flex-shrink: 0; }
+.btn-primary { width: 100%; background: #cc0000; border: none; border-radius: 7px; color: white; cursor: pointer; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.06em; padding: 0.8rem; text-transform: uppercase; margin-top: 1rem; transition: background 0.2s; }
+.btn-primary:hover { background: #e60000; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-sm { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; color: #aaa; cursor: pointer; font-size: 0.75rem; padding: 0.4rem 0.9rem; }
+.status { margin-top: 0.9rem; font-size: 0.78rem; line-height: 1.7; }
+.ok  { color: #40b864; }
+.err { color: #ff6060; }
+.inf { color: #7aabf0; }
+.guide { font-size: 0.76rem; color: #aaa; line-height: 2.1; background: rgba(255,255,255,0.03); border-radius: 6px; padding: 0.8rem 1rem; margin-bottom: 0.9rem; }
+.guide a { color: #7aabf0; }
+.guide strong { color: #f5f5f5; }
+.saved { display: none; background: rgba(64,184,100,0.1); border: 1px solid rgba(64,184,100,0.3); border-radius: 8px; padding: 0.9rem 1.1rem; margin-bottom: 1.2rem; font-size: 0.8rem; color: #40b864; line-height: 1.7; }
+.saved.show { display: block; }
+.clr { font-size: 0.7rem; color: #555; cursor: pointer; text-decoration: underline; margin-top: 0.4rem; display: inline-block; }
+.clr:hover { color: #999; }
+a.back { display: inline-block; margin-top: 1.5rem; font-size: 0.75rem; color: #555; text-decoration: none; }
+a.back:hover { color: #999; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <span style="font-size:2rem">🔐</span>
+    <div>
+      <h1>Gemini AI Setup</h1>
+      <p>Ringwood Town FC &middot; Goal Highlights Studio &middot; Admin</p>
+    </div>
+  </div>
+
+  <div class="saved" id="saved-banner">
+    &#10003; A Gemini API key is already saved for this browser.<br>
+    The main app will use it automatically &mdash; no further action needed.<br>
+    <span class="clr" onclick="clearKey()">Remove saved key</span>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Step 1 &mdash; Get your Gemini API key</div>
+    <div class="guide">
+      <strong>1.</strong> <a href="https://aistudio.google.com/apikey" target="_blank">Open Google AI Studio &nearr;</a> and sign in with your Google account<br>
+      <strong>2.</strong> Click <strong>&ldquo;Create API key&rdquo;</strong><br>
+      <strong>3.</strong> Click your project name at the top &rarr; <a href="https://console.cloud.google.com/billing" target="_blank">Set up billing &nearr;</a><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;(add a card &mdash; analysing a 90-min match costs pennies, typically under 10p)<br>
+      <strong>4.</strong> Copy your API key and paste it below
+    </div>
+
+    <div class="card-title">Step 2 &mdash; Save your key securely</div>
+
+    <label>Your Gemini API key</label>
+    <div class="row">
+      <input class="flex" id="api-key" type="password" placeholder="Paste your key here (AIza&hellip;)">
+      <button class="eye" onclick="tog('api-key')">&#128065;</button>
+    </div>
+
+    <label>Choose a password to protect it</label>
+    <input id="pw1" type="password" placeholder="Something memorable&hellip;">
+
+    <label>Confirm password</label>
+    <input id="pw2" type="password" placeholder="Same again&hellip;">
+
+    <button class="btn-primary" id="save-btn" onclick="doSave()">&#128274; Save Key to This Browser</button>
+    <div class="status" id="status"></div>
+
+    <div id="blob-box" style="display:none;margin-top:1rem;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:1rem;">
+      <div style="font-size:0.72rem;color:#888;margin-bottom:0.6rem"><strong style="color:#f5f5f5">Encrypted blob</strong> — this is your key in encrypted form. Copy it and send to your developer:</div>
+      <textarea id="blob-val" readonly rows="4" style="width:100%;font-family:monospace;font-size:0.65rem;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.1);border-radius:5px;padding:0.5rem;color:#ccc;resize:none;margin-bottom:0.6rem;"></textarea>
+      <button onclick="copyBlob()" style="width:100%;background:#cc0000;border:none;border-radius:6px;color:white;cursor:pointer;font-size:0.82rem;font-weight:700;padding:0.6rem;margin-bottom:0.75rem;">📋 Copy Encrypted Blob</button>
+      <div style="font-size:0.72rem;color:#888;">Your password: <code id="pass-val" style="background:rgba(255,255,255,0.07);padding:0.1em 0.4em;border-radius:3px;font-size:0.75rem;color:#f5f5f5;user-select:all;"></code></div>
+      <div style="font-size:0.7rem;color:#555;margin-top:0.5rem;">Send both the blob and password to your developer. The password can also be selected and copied above.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Test</div>
+    <p style="font-size:0.75rem;color:#888;margin-bottom:0.75rem">Verify your saved key works correctly.</p>
+    <button class="btn-sm" onclick="doTest()">&#9654; Test saved key</button>
+    <div class="status" id="test-out"></div>
+  </div>
+
+  <a class="back" href="index.html">&larr; Back to Goal Highlights Studio</a>
+
+</div>
+<script>
+async function deriveKey(pw, salt) {
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations:200000, hash:'SHA-256' }, km, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+}
+async function encryptKey(apiKey, pw) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const k    = await deriveKey(pw, salt);
+  const ct   = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, k, new TextEncoder().encode(apiKey));
+  const buf  = new Uint8Array(28 + ct.byteLength);
+  buf.set(salt,0); buf.set(iv,16); buf.set(new Uint8Array(ct),28);
+  return btoa(String.fromCharCode(...buf));
+}
+async function decryptKey(blob, pw) {
+  const buf  = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
+  const k    = await deriveKey(pw, buf.slice(0,16));
+  const pt   = await crypto.subtle.decrypt({ name:'AES-GCM', iv:buf.slice(16,28) }, k, buf.slice(28));
+  return new TextDecoder().decode(pt);
+}
+
+function tog(id) { const e=document.getElementById(id); e.type=e.type==='password'?'text':'password'; }
+
+function copyBlob() {
+  const ta = document.getElementById('blob-val');
+  ta.select();
+  ta.setSelectionRange(0, 99999);
+  // Try modern clipboard API first, fall back to execCommand
+  if (navigator.clipboard && window._savedBlob) {
+    navigator.clipboard.writeText(window._savedBlob).then(function() {
+      alert('Encrypted blob copied to clipboard!');
+    }).catch(function() {
+      document.execCommand('copy');
+      alert('Encrypted blob copied!');
+    });
+  } else {
+    document.execCommand('copy');
+    alert('Encrypted blob copied!');
+  }
+}
+
+function checkSaved() {
+  const hasSaved = !!(localStorage.getItem('rtfc_gemini_enc') && localStorage.getItem('rtfc_gemini_pass'));
+  document.getElementById('saved-banner').classList.toggle('show', hasSaved);
+}
+
+function clearKey() {
+  if (!confirm('Remove the saved Gemini key from this browser?')) return;
+  localStorage.removeItem('rtfc_gemini_enc');
+  localStorage.removeItem('rtfc_gemini_pass');
+  document.getElementById('test-out').textContent = '';
+  checkSaved();
+}
+
+async function doSave() {
+  const apiKey = document.getElementById('api-key').value.trim();
+  const pw1    = document.getElementById('pw1').value;
+  const pw2    = document.getElementById('pw2').value;
+  const status = document.getElementById('status');
+  const btn    = document.getElementById('save-btn');
+
+  if (!apiKey)       { status.innerHTML = '<span class="err">Please paste your API key.</span>';          return; }
+  if (!pw1)          { status.innerHTML = '<span class="err">Please choose a password.</span>';           return; }
+  if (pw1 !== pw2)   { status.innerHTML = '<span class="err">Passwords do not match.</span>';             return; }
+
+  btn.disabled = true;
+  status.innerHTML = '<span class="inf">Encrypting&hellip;</span>';
+
+  try {
+    const blob = await encryptKey(apiKey, pw1);
+    localStorage.setItem('rtfc_gemini_enc',  blob);
+    localStorage.setItem('rtfc_gemini_pass', pw1);
+
+    document.getElementById('api-key').value = '';
+    document.getElementById('pw1').value = '';
+    document.getElementById('pw2').value = '';
+
+    // Store in global so copyBlob() can reach it
+    window._savedBlob = blob;
+    window._savedPass = pw1;
+    // Show blob in a copyable textarea
+    document.getElementById('blob-box').style.display = 'block';
+    document.getElementById('blob-val').value = blob;
+    document.getElementById('blob-val').select();
+    document.getElementById('pass-val').textContent = pw1;
+    status.innerHTML = '<span class="ok">&#10003; Key saved! Copy the blob below and send it to your developer.</span>';
+    checkSaved();
+  } catch(e) {
+    status.innerHTML = '<span class="err">Error: ' + e.message + '</span>';
+  }
+  btn.disabled = false;
+}
+
+async function doTest() {
+  const out  = document.getElementById('test-out');
+  const blob = localStorage.getItem('rtfc_gemini_enc');
+  const pass = localStorage.getItem('rtfc_gemini_pass');
+  if (!blob || !pass) { out.innerHTML = '<span class="err">No key saved yet.</span>'; return; }
+  out.innerHTML = '<span class="inf">Decrypting&hellip;</span>';
+  try {
+    const k = await decryptKey(blob, pass);
+    out.innerHTML = '<span class="ok">&#10003; Key decrypts correctly &mdash; starts with: ' + k.slice(0,8) + '&hellip;</span>';
+  } catch(e) {
+    out.innerHTML = '<span class="err">&#10007; Failed: ' + e.message + '</span>';
+  }
+}
+
+checkSaved();
+</script>
+</body>
+</html>
