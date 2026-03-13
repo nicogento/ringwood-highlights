@@ -976,10 +976,8 @@ const HARDCODED_ENC_PASS = 'Venice08';
 })();
 
 function checkGeminiReady() {
-  const key = document.getElementById('gemini-key-inp').value.trim();
-  geminiKey = key;
   const btn = document.getElementById('gemini-btn');
-  btn.disabled = !(key.length > 10 && videoFile);
+  btn.disabled = !(geminiKey && geminiKey.length > 10 && videoFile);
 }
 
 function gLog(msg) {
