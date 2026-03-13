@@ -1053,7 +1053,7 @@ async function runGeminiDetection() {
       // Step 2: Ask Gemini to identify goals in this chunk
       let rawTimestamps;
       try {
-        rawTimestamps = await askGeminiForGoals(fileUri, timeOffsetS, i + 1, numChunks);
+        rawTimestamps = await askGeminiForGoals(fileUri, timeOffsetS, i + 1, numChunks, videoFile.type || 'video/mp4');
       } catch(e) {
         gLog(`  ⚠ Analysis failed: ${e.message}`);
         // Clean up the uploaded file
@@ -1190,7 +1190,7 @@ async function withRetry(fn, label, maxRetries = 4) {
   }
 }
 
-async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks) {
+async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mimeType = 'video/mp4') {
   const offsetNote = timeOffsetS > 0
     ? `IMPORTANT: This chunk starts at ${fmtTime(timeOffsetS)} in the full match. Add ${fmtTime(timeOffsetS)} to any timestamps you find.`
     : 'This is the start of the match.';
@@ -1217,11 +1217,11 @@ Rules:
         body: JSON.stringify({
           contents: [{
             parts: [
-              { fileData: { mimeType: 'video/mp4', fileUri } },
+              { fileData: { mimeType, fileUri } },
               { text: prompt }
             ]
           }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 256 }
+          generationConfig: { maxOutputTokens: 512 }
         })
       }
     );
