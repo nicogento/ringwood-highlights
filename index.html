@@ -1590,15 +1590,15 @@ addTsRow();addTsRow();addTsRow();
 // HIDDEN ADMIN PAGE
 // ═══════════════════════════════════════
 // Show admin page when URL hash is #admin-rtfc
-(function() {
-  const show = () => {
-    if (location.hash === '#admin-rtfc') {
-      document.getElementById('admin-page').style.display = 'block';
-    }
-  };
-  show();
-  window.addEventListener('hashchange', show);
-})();
+function showAdminIfHash() {
+  if (location.hash.toLowerCase() === '#admin-rtfc') {
+    const el = document.getElementById('admin-page');
+    if (el) el.style.cssText = 'display:block!important;position:fixed;inset:0;background:#0d0d0d;z-index:99999;overflow-y:auto;padding:2rem;';
+  }
+}
+document.addEventListener('DOMContentLoaded', showAdminIfHash);
+window.addEventListener('hashchange', showAdminIfHash);
+showAdminIfHash();
 
 async function adminEncrypt() {
   const apiKey = document.getElementById('adm-api-key').value.trim();
@@ -1664,5 +1664,6 @@ function adminCopyInstructions() {
 }
 
 </script>
+
 </body>
 </html>
