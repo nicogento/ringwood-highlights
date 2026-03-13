@@ -293,6 +293,7 @@ header {
 
       <div id="gemini-key-status" style="font-size:0.72rem;color:var(--muted2);margin-bottom:0.6rem;display:none"></div>
 
+      <button class="btn-sm" onclick="listGeminiModels()" style="margin-bottom:0.5rem;width:100%;background:rgba(66,133,244,0.1);border-color:rgba(66,133,244,0.3);color:#7aabf0;">🔍 List available models</button>
       <button class="gemini-btn" id="gemini-btn" onclick="runGeminiDetection()" disabled>
         <span>🤖</span> Detect Goals Automatically
       </button>
@@ -989,6 +990,25 @@ function copyGeminiLog() {
   });
 }
 
+async function listGeminiModels() {
+  const prog = document.getElementById('gemini-prog');
+  prog.style.display = 'block';
+  document.getElementById('gemini-log').innerHTML = '';
+  gLog('🔍 Fetching available models…');
+  try {
+    const res = await fetch(gUrl(`/v1beta/models?key=${geminiKey}&pageSize=50`));
+    const data = await res.json();
+    const videoModels = (data.models || []).filter(m =>
+      m.supportedGenerationMethods?.includes('generateContent') &&
+      m.name.includes('gemini')
+    );
+    gLog(`Found ${videoModels.length} Gemini generateContent models:`);
+    videoModels.forEach(m => gLog(`  • ${m.name}`));
+  } catch(e) {
+    gLog('❌ ' + e.message);
+  }
+}
+
 function gLog(msg) {
   const el = document.getElementById('gemini-log');
   const s = document.createElement('span');
@@ -1024,6 +1044,7 @@ async function runGeminiDetection() {
   try {
     const fileSize = videoFile.size;
     const numChunks = Math.ceil(fileSize / CHUNK_SIZE);
+    gLog(`🤖 Using model: gemini-1.5-flash`);
     gLog(`📦 Video is ${fmtBytes(fileSize)} — splitting into ${numChunks} chunk${numChunks>1?'s':''} for upload…`);
 
     // Get total video duration so we can calculate chunk time offsets
