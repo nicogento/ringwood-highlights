@@ -1162,52 +1162,30 @@ async function getVideoDuration(file) {
 }
 
 async function uploadToGeminiFiles(blob, mimeType, chunkNum, totalChunks) {
-  // Step 1: Initiate resumable upload
-  const initRes = await fetch(
-    gUrl(`/upload/v1beta/files?uploadType=resumable&key=${geminiKey}`),
-    {
-      method: 'POST',
-      headers: {
-        'X-Goog-Upload-Protocol': 'resumable',
-        'X-Goog-Upload-Command': 'start',
-        'X-Goog-Upload-Header-Content-Length': blob.size,
-        'X-Goog-Upload-Header-Content-Type': mimeType,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ file: { display_name: `rtfc_chunk_${chunkNum}_of_${totalChunks}` } })
-    }
+  // Use multipart upload — works from browsers (no custom headers = no CORS preflight block)
+  // The resumable upload API uses X-Goog-Upload-* headers which Google's CORS policy blocks
+  const metadata = JSON.stringify({ file: { display_name: `rtfc_chunk_${chunkNum}_of_${totalChunks}` } });
+
+  const body = new FormData();
+  body.append('metadata', new Blob([metadata], { type: 'application/json' }));
+  body.append('file', blob, `chunk_${chunkNum}.mp4`);
+
+  const res = await fetch(
+    gUrl(`/upload/v1beta/files?uploadType=multipart&key=${geminiKey}`),
+    { method: 'POST', body }
   );
 
-  if (!initRes.ok) {
-    const err = await initRes.text();
-    if (initRes.status === 400 || initRes.status === 403) throw new Error('API key not valid');
-    throw new Error(`Init upload failed (${initRes.status}): ${err.slice(0,120)}`);
+  if (!res.ok) {
+    const err = await res.text();
+    if (res.status === 400 || res.status === 403) throw new Error('API key not valid — please check and re-enter');
+    throw new Error(`Upload failed (${res.status}): ${err.slice(0,120)}`);
   }
 
-  const uploadUrl = initRes.headers.get('X-Goog-Upload-URL');
-  if (!uploadUrl) throw new Error('No upload URL returned from Gemini');
-
-  // Step 2: Upload the actual bytes
-  const uploadRes = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Length': blob.size,
-      'X-Goog-Upload-Offset': '0',
-      'X-Goog-Upload-Command': 'upload, finalize',
-    },
-    body: blob
-  });
-
-  if (!uploadRes.ok) {
-    const err = await uploadRes.text();
-    throw new Error(`Upload failed (${uploadRes.status}): ${err.slice(0,120)}`);
-  }
-
-  const data = await uploadRes.json();
+  const data = await res.json();
   const fileUri = data?.file?.uri;
   if (!fileUri) throw new Error('No file URI in upload response');
 
-  // Wait for file to be processed by Gemini (state: ACTIVE)
+  // Wait for Gemini to finish processing the file (state: ACTIVE)
   return await waitForFileActive(fileUri);
 }
 
