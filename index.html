@@ -1221,17 +1221,20 @@ Rules:
 - No other text, no explanations`;
 
   return await withRetry(async () => {
+    // Gemini fileData expects "files/xxx" format, not the full URL
+    const fileId = fileUri.includes('/files/') ? 'files/' + fileUri.split('/files/')[1] : fileUri;
+    // Build request
     const requestBody = {
       contents: [{
         parts: [
-          { fileData: { mimeType, fileUri } },
+          { fileData: { mimeType: mimeType, fileUri: fileId } },
           { text: prompt }
         ]
       }],
-      generationConfig: { maxOutputTokens: 2048 }
+      generationConfig: { maxOutputTokens: 512 }
     };
-    gLog(`  📡 Sending to gemini-2.5-flash — mimeType: ${mimeType}, fileUri: ${fileUri.slice(-30)}`);
-    gLog(`  📋 Request: ${JSON.stringify(requestBody).slice(0, 200)}`);
+    gLog(`  📡 Sending to gemini-2.5-flash — mimeType: ${mimeType}, fileId: ${fileId}`);
+    gLog(`  📋 Request body fileData: ${JSON.stringify({mimeType, fileUri: fileId})}`);
     const res = await fetch(
       gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`),
       {
@@ -1242,6 +1245,7 @@ Rules:
     );
     if (!res.ok) {
       const err = await res.text();
+      gLog(`  🔍 Full error: ${err}`);
       throw new Error(`Gemini API error (${res.status}): ${err.slice(0,600)}`);
     }
     const data = await res.json();
