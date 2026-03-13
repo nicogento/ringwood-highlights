@@ -422,7 +422,7 @@ header {
       <div id="adm-test-out" style="margin-top:0.6rem;font-size:0.76rem;color:#888;"></div>
     </div>
 
-    <button onclick="document.getElementById('admin-page').style.display='none'" style="background:none;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#666;cursor:pointer;font-size:0.78rem;padding:0.4rem 1rem;">✕ Close admin panel</button>
+    <button onclick="hideAdminPanel()" style="background:none;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#666;cursor:pointer;font-size:0.78rem;padding:0.4rem 1rem;">✕ Close admin panel</button>
   </div>
 </div>
 
@@ -970,7 +970,7 @@ const HARDCODED_ENC_PASS = ''; // The password you chose in the admin page
   // No key configured at all — show a subtle notice (only admins will see this)
   const statusEl = document.getElementById('gemini-key-status');
   if (statusEl) {
-    statusEl.textContent = '⚙ Gemini AI not configured — visit #admin-rtfc to set up';
+    statusEl.textContent = '⚙ Gemini AI not configured — press Ctrl+Shift+A to set up';
     statusEl.style.display = 'block';
   }
   checkGeminiReady();
@@ -1590,15 +1590,36 @@ addTsRow();addTsRow();addTsRow();
 // HIDDEN ADMIN PAGE
 // ═══════════════════════════════════════
 // Show admin page when URL hash is #admin-rtfc
-function showAdminIfHash() {
-  if (location.hash.toLowerCase() === '#admin-rtfc') {
-    const el = document.getElementById('admin-page');
-    if (el) el.style.cssText = 'display:block!important;position:fixed;inset:0;background:#0d0d0d;z-index:99999;overflow-y:auto;padding:2rem;';
+function showAdminPanel() {
+  const el = document.getElementById('admin-page');
+  if (el) {
+    el.style.display = 'block';
+    el.style.position = 'fixed';
+    el.style.inset = '0';
+    el.style.background = '#0d0d0d';
+    el.style.zIndex = '99999';
+    el.style.overflowY = 'auto';
+    el.style.padding = '2rem';
   }
 }
-document.addEventListener('DOMContentLoaded', showAdminIfHash);
-window.addEventListener('hashchange', showAdminIfHash);
-showAdminIfHash();
+function hideAdminPanel() {
+  const el = document.getElementById('admin-page');
+  if (el) el.style.display = 'none';
+}
+// Secret keyboard shortcut: Ctrl+Shift+A
+document.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+    e.preventDefault();
+    showAdminPanel();
+  }
+});
+// Also support URL hash for direct linking
+document.addEventListener('DOMContentLoaded', function() {
+  if (location.hash.toLowerCase() === '#admin-rtfc') showAdminPanel();
+});
+window.addEventListener('hashchange', function() {
+  if (location.hash.toLowerCase() === '#admin-rtfc') showAdminPanel();
+});
 
 async function adminEncrypt() {
   const apiKey = document.getElementById('adm-api-key').value.trim();
