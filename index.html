@@ -1044,7 +1044,7 @@ async function runGeminiDetection() {
   try {
     const fileSize = videoFile.size;
     const numChunks = Math.ceil(fileSize / CHUNK_SIZE);
-    gLog(`🤖 Using model: gemini-1.5-flash`);
+    gLog(`🤖 Using model: gemini-2.5-flash`);
     gLog(`📦 Video is ${fmtBytes(fileSize)} — splitting into ${numChunks} chunk${numChunks>1?'s':''} for upload…`);
 
     // Get total video duration so we can calculate chunk time offsets
@@ -1253,10 +1253,10 @@ Rules:
         ]
       }]
     };
-    gLog(`  📡 Sending to gemini-1.5-flash — fileUri: ${fileUriFixed}`);
+    gLog(`  📡 Sending to gemini-2.5-flash — fileUri: ${fileUriFixed}`);
     gLog(`  📋 Full request: ${JSON.stringify(requestBody).slice(0,300)}`);
     const res = await fetch(
-      gUrl(`/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`),
+      gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
