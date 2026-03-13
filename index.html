@@ -1106,6 +1106,12 @@ async function runGeminiDetection() {
 
       // Clean up the uploaded file to save quota
       await deleteGeminiFile(fileUri).catch(()=>{});
+
+      // Pause between chunks to respect Gemini free tier rate limits (2 req/min)
+      if (i < numChunks - 1) {
+        gLog(`  ⏳ Pausing 35s before next chunk (free tier rate limit)…`);
+        await new Promise(r => setTimeout(r, 35000));
+      }
     }
 
     gSetP(95);
@@ -1204,6 +1210,27 @@ async function waitForFileActive(fileUri) {
   throw new Error('Timed out waiting for Gemini to process file');
 }
 
+// Retry a fetch-based fn up to maxRetries times, with exponential backoff on 429/500
+async function withRetry(fn, label, maxRetries = 4) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch(e) {
+      const is429 = e.message.includes('429');
+      const is5xx = e.message.match(/\(5\d\d\)/);
+      if ((is429 || is5xx) && attempt < maxRetries) {
+        const wait = is429
+          ? (30 + attempt * 15) * 1000   // 429: wait 30s, 45s, 60s, 75s
+          : (5  + attempt * 5)  * 1000;  // 5xx: wait 5s, 10s, 15s, 20s
+        gLog(`  ⏳ ${label} rate-limited — waiting ${wait/1000}s before retry ${attempt+1}/${maxRetries}…`);
+        await new Promise(r => setTimeout(r, wait));
+      } else {
+        throw e;
+      }
+    }
+  }
+}
+
 async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks) {
   const offsetNote = timeOffsetS > 0
     ? `IMPORTANT: This chunk starts at ${fmtTime(timeOffsetS)} in the full match. Add ${fmtTime(timeOffsetS)} to any timestamps you find.`
@@ -1222,36 +1249,33 @@ Rules:
 - If there are goals, reply with ONLY a comma-separated list of timestamps, e.g.: 12:34, 45:02, 67:18
 - No other text, no explanations`;
 
-  const res = await fetch(
-    gUrl(`/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`),
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { fileData: { mimeType: 'video/mp4', fileUri } },
-            { text: prompt }
-          ]
-        }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 256 }
-      })
+  return await withRetry(async () => {
+    const res = await fetch(
+      gUrl(`/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { fileData: { mimeType: 'video/mp4', fileUri } },
+              { text: prompt }
+            ]
+          }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 256 }
+        })
+      }
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Gemini API error (${res.status}): ${err.slice(0,120)}`);
     }
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini API error (${res.status}): ${err.slice(0,120)}`);
-  }
-
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
-  if (!text || text.toUpperCase().includes('NO GOALS')) return [];
-
-  // Parse out all MM:SS or M:SS timestamps from the response
-  const matches = text.match(/\d{1,2}:\d{2}/g) || [];
-  return [...new Set(matches)]; // dedupe within chunk
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    if (!text || text.toUpperCase().includes('NO GOALS')) return [];
+    const matches = text.match(/\d{1,2}:\d{2}/g) || [];
+    return [...new Set(matches)];
+  }, `chunk ${chunkNum}`);
 }
 
 async function deleteGeminiFile(fileUri) {
