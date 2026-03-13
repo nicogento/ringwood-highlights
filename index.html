@@ -970,7 +970,7 @@ const HARDCODED_ENC_PASS = ''; // The password you chose in the admin page
   // No key configured at all — show a subtle notice (only admins will see this)
   const statusEl = document.getElementById('gemini-key-status');
   if (statusEl) {
-    statusEl.textContent = '⚙ Gemini AI not configured — press Ctrl+Shift+A to set up';
+    statusEl.textContent = '⚙ Gemini AI not configured — press Ctrl+Shift+K to set up';
     statusEl.style.display = 'block';
   }
   checkGeminiReady();
@@ -1608,7 +1608,7 @@ function hideAdminPanel() {
 }
 // Secret keyboard shortcut: Ctrl+Shift+A
 document.addEventListener('keydown', function(e) {
-  if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+  if (e.ctrlKey && e.shiftKey && e.key === 'K') {
     e.preventDefault();
     showAdminPanel();
   }
