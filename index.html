@@ -942,12 +942,15 @@ function insRow(afterItemId, prevType){
   const d=document.createElement('div');
   d.className='ins-row';
   d.style.cssText='flex-direction:column;gap:2px;';
-  const afterClipOrMeme = prevType==='clip' || prevType==='meme';
-  d.innerHTML=`
-    ${afterClipOrMeme
-      ? `<button class="ins-btn" style="border:1px dashed rgba(64,184,100,0.35);color:rgba(64,184,100,0.5);font-size:0.65rem;" onmouseover="this.style.background='rgba(64,184,100,0.08)';this.style.color='#40b864'" onmouseout="this.style.background='';this.style.color='rgba(64,184,100,0.5)'" onclick="insertMeme(${afterItemId})">🎬 + Meme clip after clip above</button>`
-      : `<button class="ins-btn ins-slide" style="font-size:0.65rem;" onclick="insertSlide(${afterItemId})">🖼️ + Player slide before clip below</button>`
-    }`;
+  const memeBtn = `<button class="ins-btn" style="border:1px dashed rgba(64,184,100,0.35);color:rgba(64,184,100,0.5);font-size:0.65rem;" onmouseover="this.style.background='rgba(64,184,100,0.08)';this.style.color='#40b864'" onmouseout="this.style.background='';this.style.color='rgba(64,184,100,0.5)'" onclick="insertMeme(${afterItemId})">🎬 + Meme clip after clip above</button>`;
+  const slideBtn = `<button class="ins-btn ins-slide" style="font-size:0.65rem;" onclick="insertSlide(${afterItemId})">🖼️ + Player slide before clip below</button>`;
+  if (prevType === 'clip') {
+    d.innerHTML = memeBtn; // only meme — no slide between clip and its meme
+  } else if (prevType === 'meme') {
+    d.innerHTML = memeBtn + slideBtn; // another meme OR start of next clip's slide
+  } else {
+    d.innerHTML = slideBtn; // top of list or after a slide
+  }
   return d;
 }
 
