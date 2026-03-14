@@ -656,12 +656,34 @@ function removeClip(id) {
 }
 
 function sortItemsByTs() {
-  // Sort clips by timestamp, keeping slides in place relative to surrounding clips
-  const clips = items.filter(i => i.type === 'clip');
-  clips.sort((a, b) => (parseSecs(a.ts) || 0) - (parseSecs(b.ts) || 0));
-  // Rebuild items: interleave slides back in
-  const slides = items.filter(i => i.type === 'slide');
-  items = [...clips, ...slides]; // simplified: slides go to end on sort; drag-reorder restores them
+  // Build "groups": each group is a clip + any slides that immediately follow it.
+  // Slides before the first clip form a "pre-group" that stays at the top.
+  const groups = [];
+  let preSlides = [];
+  let foundFirstClip = false;
+
+  items.forEach(item => {
+    if (item.type === 'clip') {
+      foundFirstClip = true;
+      groups.push({ clip: item, slides: [] });
+    } else if (item.type === 'slide') {
+      if (!foundFirstClip) {
+        preSlides.push(item); // slides before any clip stay at top
+      } else {
+        groups[groups.length - 1].slides.push(item); // attach to preceding clip
+      }
+    }
+  });
+
+  // Sort groups by clip timestamp
+  groups.sort((a, b) => (parseSecs(a.clip.ts) || 0) - (parseSecs(b.clip.ts) || 0));
+
+  // Rebuild items: pre-slides first, then each clip followed by its slides
+  items = [...preSlides];
+  groups.forEach(g => {
+    items.push(g.clip);
+    items.push(...g.slides);
+  });
 }
 // refreshTimes removed — per-clip settings now used
 
