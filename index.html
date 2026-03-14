@@ -1144,64 +1144,59 @@ async function runGeminiDetection() {
 
   try {
     const fileSize = videoFile.size;
-    const numChunks = Math.ceil(fileSize / CHUNK_SIZE);
+    const MAX_SIZE = 95 * 1024 * 1024; // 95MB — Gemini Files API limit
     gLog(`🤖 Using model: gemini-2.5-flash`);
-    gLog(`📦 Video is ${fmtBytes(fileSize)} — splitting into ${numChunks} chunk${numChunks>1?'s':''} for upload…`);
+    gLog(`📦 Video is ${fmtBytes(fileSize)}`);
 
-    // Get total video duration so we can calculate chunk time offsets
+    if (fileSize > MAX_SIZE) {
+      gLog(`⚠ File is larger than 95MB — Gemini can only accept files up to 95MB.`);
+      gLog(`  Please trim the video to under 95MB and try again.`);
+      btn.disabled = false;
+      return;
+    }
+
+    // Get total video duration
     const dur = await getVideoDuration(videoFile);
     gLog(`⏱ Match duration: ${fmtTime(dur)}`);
 
-    const secondsPerByte = dur / fileSize;
     const allTimestamps = [];
 
-    for (let i = 0; i < numChunks; i++) {
-      const chunkStart = i * CHUNK_SIZE;
-      const chunkEnd   = Math.min(fileSize, chunkStart + CHUNK_SIZE);
-      const chunk      = videoFile.slice(chunkStart, chunkEnd);
+    // Upload the full file as a single piece — slicing video into byte chunks
+    // produces invalid video fragments that Gemini rejects
+    gLog(`\n📤 Uploading full video (${fmtBytes(fileSize)})…`);
+    gSetP(10);
 
-      // Time offset of this chunk in the full match
-      const timeOffsetS = chunkStart * secondsPerByte;
-      const chunkDurS   = (chunkEnd - chunkStart) * secondsPerByte;
-
-      gLog(`
-📤 Uploading chunk ${i+1}/${numChunks} (${fmtBytes(chunk.size)}, ~${fmtTime(timeOffsetS)}–${fmtTime(timeOffsetS + chunkDurS)})…`);
-      gSetP((i / numChunks) * 60);
-
-      // Step 1: Upload file to Gemini Files API
-      let fileUri;
-      try {
-        fileUri = await uploadToGeminiFiles(chunk, videoFile.type || 'video/mp4', i + 1, numChunks);
-      } catch(e) {
-        gLog(`  ❌ Upload failed: ${e.message}`);
-        if (e.message.includes('API key')) {
-          gLog('❌ Invalid API key — please create a new key at aistudio.google.com/apikey');
-          break;
-        }
-        continue;
+    let fileUri;
+    try {
+      fileUri = await uploadToGeminiFiles(videoFile, videoFile.type || 'video/mp4', 1, 1);
+    } catch(e) {
+      gLog(`  ❌ Upload failed: ${e.message}`);
+      if (e.message.includes('API key')) {
+        gLog('❌ Invalid API key — please update via admin.html');
       }
-
-      gLog(`  ✓ Uploaded. Asking Gemini to find goals…`);
-      gSetP((i / numChunks) * 60 + 20);
-
-      // Step 2: Ask Gemini to identify goals in this chunk
-      let rawTimestamps;
-      try {
-        rawTimestamps = await askGeminiForGoals(fileUri, timeOffsetS, i + 1, numChunks);
-      } catch(e) {
-        gLog(`  ⚠ Analysis failed: ${e.message}`);
-        // Clean up the uploaded file
-        await deleteGeminiFile(fileUri).catch(()=>{});
-        continue;
-      }
-
-      gLog(`  ✓ Found ${rawTimestamps.length} goal${rawTimestamps.length!==1?'s':''} in this chunk`);
-      if (rawTimestamps.length) gLog(`    → ${rawTimestamps.join(', ')}`);
-      allTimestamps.push(...rawTimestamps);
-
-      // Clean up the uploaded file to save quota
-      await deleteGeminiFile(fileUri).catch(()=>{});
+      btn.disabled = false;
+      return;
     }
+
+    gLog(`  ✓ Uploaded. Asking Gemini to find goals…`);
+    gSetP(70);
+
+    let rawTimestamps;
+    try {
+      rawTimestamps = await askGeminiForGoals(fileUri, 0, 1, 1, videoFile.type || 'video/mp4');
+    } catch(e) {
+      gLog(`  ⚠ Analysis failed: ${e.message}`);
+      await deleteGeminiFile(fileUri).catch(()=>{});
+      btn.disabled = false;
+      return;
+    }
+
+    gLog(`  ✓ Found ${rawTimestamps.length} goal${rawTimestamps.length!==1?'s':''}`);
+    if (rawTimestamps.length) gLog(`    → ${rawTimestamps.join(', ')}`);
+    allTimestamps.push(...rawTimestamps);
+
+    // Clean up uploaded file
+    await deleteGeminiFile(fileUri).catch(()=>{});
 
     gSetP(95);
 
