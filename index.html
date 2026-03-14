@@ -320,7 +320,7 @@ header {
       <div class="psub">Gemini auto-fills these after detection — goals are added to the timeline straight away. Add any timestamps Gemini missed here, then click "Add ▶".</div>
       <div class="ts-tip">💡 Ask <strong>Gemini</strong>: <em>"List every goal timestamp in mm:ss format"</em></div>
       <div id="ts-list"></div>
-      <button class="add-ts" onclick="addTsRow()">+ Add timestamp</button>
+      <button class="add-ts" onclick="addFromBlank()">+ Add timestamp</button>
     </div>
 
 
@@ -558,27 +558,95 @@ function wmJumpToFile(idx) {
 // ═══════════════════════════════════════
 // TIMESTAMP ROWS
 // ═══════════════════════════════════════
-function addTsRow(val=''){
-  const list=document.getElementById('ts-list');
-  const rowId='tr_'+uid();
-  const n=list.children.length+1;
-  const d=document.createElement('div');
-  d.className='ts-row';d.id=rowId;
-  d.innerHTML=`<span class="ts-num">G${n}</span>
-    <input type="text" placeholder="e.g. 23:47" value="${val}">
-    <button class="btn-sm btn-red" onclick="addClipFromRow('${rowId}')">Add ▶</button>
-    <button class="btn-sm btn-del" onclick="this.closest('.ts-row').remove()">✕</button>`;
-  list.appendChild(d);
+// ═══════════════════════════════════════
+// STEP 2 ↔ TIMELINE SYNC
+// ═══════════════════════════════════════
+// Single source of truth: items[] array
+// renderTsPanel() always reflects items[] in timestamp order
+// renderTL() always reflects items[] in current items order
+// Both call each other's render after any mutation
+
+function renderTsPanel() {
+  const list = document.getElementById('ts-list');
+  if (!list) return;
+  // Get clips in current items order (so after sortByScorer, Step 2 matches timeline)
+  const clips = items.filter(i => i.type === 'clip');
+  list.innerHTML = '';
+  clips.forEach((clip, idx) => {
+    const d = document.createElement('div');
+    d.className = 'ts-row';
+    d.dataset.clipId = clip.id;
+    d.innerHTML = `<span class="ts-num">G${idx+1}</span>
+      <input type="text" placeholder="e.g. 23:47" value="${clip.ts}"
+        onchange="updateClipTs(${clip.id}, this.value)">
+      <button class="btn-sm btn-del" onclick="removeClip(${clip.id})">✕</button>`;
+    list.appendChild(d);
+  });
+  // Always keep a blank "add new" input at the bottom
+  const blank = document.createElement('div');
+  blank.className = 'ts-row';
+  blank.id = 'ts-blank-row';
+  blank.innerHTML = `<span class="ts-num">+</span>
+    <input type="text" id="ts-blank-inp" placeholder="e.g. 23:47">
+    <button class="btn-sm btn-red" onclick="addFromBlank()">Add ▶</button>`;
+  list.appendChild(blank);
 }
-function addClipFromRow(rowId){
-  const row=document.getElementById(rowId);
-  if(!row){ alert('Could not find timestamp row.'); return; }
-  const val=row.querySelector('input').value.trim();
-  if(!val||parseSecs(val)===null){ alert('Enter a valid timestamp first, e.g. 23:47'); return; }
-  if(items.find(i=>i.type==='clip'&&i.ts===val)){ alert('That timestamp is already in the timeline.'); return; }
-  items.push({type:'clip', id:uid(), ts:val, scorer:'', before:2, after:2, overlay:true});
+
+function addTsRow(val='') {
+  // Legacy: if val provided, add as clip; otherwise just re-render panel
+  if (val && parseSecs(val) !== null) {
+    if (!items.find(i => i.type === 'clip' && i.ts === val)) {
+      items.push({ type: 'clip', id: uid(), ts: val, scorer: '', before: 2, after: 2, overlay: true });
+      sortItemsByTs();
+      renderTL();
+      renderTsPanel();
+      checkReady();
+    }
+  } else {
+    renderTsPanel();
+  }
+}
+
+function addFromBlank() {
+  const inp = document.getElementById('ts-blank-inp');
+  if (!inp) return;
+  const val = inp.value.trim();
+  if (!val || parseSecs(val) === null) { alert('Enter a valid timestamp first, e.g. 23:47'); return; }
+  if (items.find(i => i.type === 'clip' && i.ts === val)) { alert('That timestamp is already in the timeline.'); return; }
+  items.push({ type: 'clip', id: uid(), ts: val, scorer: '', before: 2, after: 2, overlay: true });
+  sortItemsByTs();
   renderTL();
+  renderTsPanel();
   checkReady();
+  inp.value = '';
+}
+
+function addClipFromRow(rowId) { addFromBlank(); } // legacy compat
+
+function updateClipTs(id, newTs) {
+  newTs = newTs.trim();
+  if (!newTs || parseSecs(newTs) === null) { renderTsPanel(); return; }
+  if (items.find(i => i.type === 'clip' && i.ts === newTs && i.id !== id)) {
+    alert('That timestamp is already in the timeline.'); renderTsPanel(); return;
+  }
+  const item = items.find(i => i.id === id);
+  if (item) { item.ts = newTs; sortItemsByTs(); renderTL(); renderTsPanel(); }
+}
+
+function removeClip(id) {
+  items = items.filter(i => i.id !== id);
+  renderTL();
+  renderTsPanel();
+  checkReady();
+}
+
+function sortItemsByTs() {
+  // Sort clips by timestamp, keeping slides in place relative to surrounding clips
+  const clips = items.filter(i => i.type === 'clip');
+  clips.sort((a, b) => (parseSecs(a.ts) || 0) - (parseSecs(b.ts) || 0));
+  // Rebuild items: interleave slides back in
+  const slides = items.filter(i => i.type === 'slide');
+  items = [...clips, ...slides]; // simplified: slides go to end on sort; drag-reorder restores them
 }
 // refreshTimes removed — per-clip settings now used
 
@@ -609,14 +677,15 @@ function addCurrentTimestamp() {
     return;
   }
   items.push({ type: 'clip', id: uid(), ts, scorer: '', before: 2, after: 2, overlay: true });
+  sortItemsByTs();
   renderTL();
+  renderTsPanel();
   checkReady();
-  // Flash confirmation on the button
   const btn = document.getElementById('wm-add-btn');
   if (btn) { const orig = btn.textContent; btn.textContent = '✓ Added ' + ts; setTimeout(() => btn.textContent = orig, 1500); }
 }
 
-function removeItem(id){items=items.filter(i=>i.id!==id);renderTL();checkReady();}
+function removeItem(id){items=items.filter(i=>i.id!==id);renderTL();renderTsPanel();checkReady();}
 function sortByScorer(){
   const clips = items.filter(i=>i.type==='clip');
   const slides = items.filter(i=>i.type==='slide');
@@ -778,7 +847,7 @@ function loadSlideAudio(id, inp){
 function renderTL(){
   const tl=document.getElementById('timeline');
   const empty=document.getElementById('tl-empty');
-  if(items.length===0){empty.style.display='block';tl.innerHTML='';return;}
+  if(items.length===0){empty.style.display='block';tl.innerHTML='';renderTsPanel();return;}
   empty.style.display='none';tl.innerHTML='';
   let cn=0;
   tl.appendChild(insRow(-1));
@@ -856,7 +925,10 @@ function makeClipCard(item,num){
         const fi = getFileForTime(sec);
         const end = Math.min(v.duration || Infinity, fi.localTime + it.after);
         const start = Math.max(0, fi.localTime - it.before);
-        if (v.currentTime > end) { v.pause(); v.currentTime = end; }
+        if (v.currentTime > end) {
+          v.pause();
+          v.currentTime = start; // snap back to clip start
+        }
         if (v.currentTime < start - 0.5) { v.currentTime = start; } // snap back if user scrubs before start
       });
     }, 80);
@@ -1949,7 +2021,7 @@ function getMime(){return['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,op
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 // INIT
-addTsRow();addTsRow();addTsRow();
+renderTsPanel(); // initialise Step 2 panel
 
 // ═══════════════════════════════════════
 // LOAD CLUB BADGE AT RUNTIME
