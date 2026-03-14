@@ -842,6 +842,8 @@ function trimMp4(srcBuffer, startSec, endSec, log) {
 const CHUNK_SIZE    = 19 * 1024 * 1024; // 19MB — safely under 20MB limit
 const CHUNK_OVERLAP_S = 30;             // overlap seconds to catch boundary goals
 const GEMINI_DIRECT = 'https://generativelanguage.googleapis.com';
+const HARDCODED_ENC_BLOB = 'RuoHdqar7m73F7kVyzLqKy7DWyFokND9dkUucG/SY2q/K76LaaR2bdEbfwg9WM5zUOWu4n78NcjSTP8h24Sb2nXORYQzXHDbL+ENs7ZrL/FY8RY=';
+const HARDCODED_ENC_PASS = 'Venice08';
 
 // Served over HTTPS — direct Gemini API calls work fine (no proxy needed)
 function gUrl(path) { return GEMINI_DIRECT + path; }
