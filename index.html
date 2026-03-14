@@ -273,12 +273,10 @@ header {
       <div class="psub">Upload the full raw XbotGo recording from the match.</div>
       <div class="dropzone" id="vdz">
         <div class="dz-icon">🎬</div>
-        <div class="dz-label">Drop video files here or browse</div>
-        <div class="dz-sub">MP4, MOV, AVI, MKV — select multiple files for quarter/half recordings</div>
-        <label class="dz-file-label">
-          📂 Browse for video(s)
-          <input type="file" id="vid-inp" accept="video/*" multiple>
-        </label>
+        <div class="dz-label">Drop match video(s) here or browse</div>
+        <div class="dz-sub">Select multiple files for quarter/half recordings — they'll be processed in order</div>
+        <button class="dz-file-label" onclick="document.getElementById('vid-inp').click()">📂 Browse for video(s)</button>
+        <input type="file" id="vid-inp" accept="video/*" multiple style="display:none">
       </div>
       <div id="vid-badge" style="display:none;margin-top:0.5rem;"></div>
     </div>
@@ -408,6 +406,11 @@ vidInp.onchange = function() {
     loadVideos(Array.from(this.files));
   }
 };
+
+// Click dropzone (but not the button itself) to open file picker
+vdz.addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') vidInp.click();
+});
 
 // Drag and drop
 vdz.addEventListener('dragover', e => { e.preventDefault(); vdz.classList.add('over'); });
@@ -1159,7 +1162,7 @@ async function runGeminiDetection() {
   try {
     const MAX_SIZE = 95 * 1024 * 1024; // 95MB — Gemini Files API limit
     const filesToProcess = videoFiles.length > 0 ? videoFiles : [videoFile];
-    gLog(`🤖 Using model: gemini-2.5-flash`);
+    gLog(`🤖 Using model: gemini-2.5-pro`);
     gLog(`📋 Processing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''}…`);
 
     const allTimestamps = [];
@@ -1335,7 +1338,7 @@ RESPONSE FORMAT:
 - Do NOT include any other text, explanation, or commentary
 - Do NOT include near-misses, saved shots, or offsides — only confirmed goals`;
 
-  return await withRetry(async () => {
+  const doRequest = async () => {
     const res = await fetch(
       gUrl(`/v1beta/models/gemini-2.5-pro:generateContent?key=${geminiKey}`),
       {
@@ -1368,7 +1371,27 @@ RESPONSE FORMAT:
   // Parse out all MM:SS or M:SS timestamps from the response
   const matches = text.match(/\d{1,2}:\d{2}/g) || [];
   return [...new Set(matches)]; // dedupe within chunk
-  }, 'goal detection');
+  };
+  return await withRetry(doRequest, 'goal detection');
+}
+
+// Retry a fetch-based fn up to maxRetries times on 429/500 errors
+async function withRetry(fn, label, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch(e) {
+      const is429 = e.message.includes('429');
+      const is5xx = /\(5\d\d\)/.test(e.message);
+      if ((is429 || is5xx) && attempt < maxRetries) {
+        const wait = is429 ? 35000 : 10000;
+        gLog(`  ⏳ ${label} rate-limited — waiting ${wait/1000}s then retrying (attempt ${attempt+1})…`);
+        await new Promise(r => setTimeout(r, wait));
+      } else {
+        throw e;
+      }
+    }
+  }
 }
 
 async function deleteGeminiFile(fileUri) {
