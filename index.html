@@ -327,7 +327,10 @@ header {
   </div>
 
   <!-- FULL MATCH REVIEW -->
-  <div class="panel" id="wholematch-panel" style="margin-top:1rem;">
+  <div class="panel" id="wholematch-panel" style="margin-top:1rem;position:relative;">
+    <div id="wholematch-lock" style="position:absolute;inset:0;background:rgba(13,13,13,0.7);border-radius:10px;z-index:10;display:flex;align-items:center;justify-content:center;pointer-events:all;">
+      <span style="font-size:0.85rem;color:#888;text-align:center;">🔒 Run <strong style="color:#f5f5f5">Detect Goals Automatically</strong> first</span>
+    </div>
     <div class="ptitle">🎬 Full Match Review</div>
     <div class="psub">Watch the full match to find any goals Gemini missed. Pause at the goal moment and click Add.</div>
     <div id="wholematch-body">
@@ -1333,6 +1336,9 @@ async function runGeminiDetection() {
 
       const found = document.getElementById('gemini-found');
       found.textContent = `✓ ${added} goal${added!==1?'s':''} added to timeline — scroll down to review. Add any missed goals in Step 2 below.`;
+      // Unlock full match review panel
+      const lock = document.getElementById('wholematch-lock');
+      if (lock) lock.style.display = 'none';
       found.style.display = 'block';
     }
 
