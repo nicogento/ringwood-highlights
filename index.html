@@ -463,7 +463,7 @@ function addClipFromRow(rowId){
   const val=row.querySelector('input').value.trim();
   if(!val||parseSecs(val)===null){ alert('Enter a valid timestamp first, e.g. 23:47'); return; }
   if(items.find(i=>i.type==='clip'&&i.ts===val)){ alert('That timestamp is already in the timeline.'); return; }
-  items.push({type:'clip', id:uid(), ts:val, scorer:'', before:15, after:10, overlay:true});
+  items.push({type:'clip', id:uid(), ts:val, scorer:'', before:2, after:2, overlay:true});
   renderTL();
   checkReady();
 }
@@ -1230,7 +1230,7 @@ async function runGeminiDetection() {
       let added = 0;
       deduped.forEach(ts => {
         if (!items.find(i => i.type === 'clip' && i.ts === ts)) {
-          items.push({ type: 'clip', id: uid(), ts, scorer: '', before: 15, after: 10, overlay: true });
+          items.push({ type: 'clip', id: uid(), ts, scorer: '', before: 2, after: 2, overlay: true });
           added++;
         }
       });
