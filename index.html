@@ -309,9 +309,9 @@ header {
         <div class="key-status" id="key-status"></div>
       </div>
 
-      <button class="btn-sm" onclick="listGeminiModels()" style="display:none;margin-bottom:0.5rem;width:100%;background:rgba(66,133,244,0.1);border-color:rgba(66,133,244,0.3);color:#7aabf0;">🔍 List available models</button>
-      <button class="btn-sm" onclick="testTextOnly()" style="display:none;margin-bottom:0.5rem;width:100%;background:rgba(64,184,100,0.1);border-color:rgba(64,184,100,0.3);color:#40b864;">🧪 Test API (text only)</button>
-      <button class="btn-sm" onclick="testFilePrompt()" style="display:none;margin-bottom:0.5rem;width:100%;background:rgba(240,192,64,0.1);border-color:rgba(240,192,64,0.3);color:#f0c040;">🎥 Test file + prompt (upload video first)</button>
+      <button class="btn-sm" onclick="listGeminiModels()" style="margin-bottom:0.5rem;width:100%;background:rgba(66,133,244,0.1);border-color:rgba(66,133,244,0.3);color:#7aabf0;">🔍 List available models</button>
+      <button class="btn-sm" onclick="testTextOnly()" style="margin-bottom:0.5rem;width:100%;background:rgba(64,184,100,0.1);border-color:rgba(64,184,100,0.3);color:#40b864;">🧪 Test API (text only)</button>
+      <button class="btn-sm" onclick="testFilePrompt()" style="margin-bottom:0.5rem;width:100%;background:rgba(240,192,64,0.1);border-color:rgba(240,192,64,0.3);color:#f0c040;">🎥 Test file + prompt (upload video first)</button>
       <button class="gemini-btn" id="gemini-btn" onclick="runGeminiDetection()" disabled>
         <span>🤖</span> Detect Goals Automatically
       </button>
@@ -1096,8 +1096,13 @@ async function testFilePrompt() {
 
 function checkGeminiReady() {
   const btn = document.getElementById('gemini-btn');
-  btn.disabled = !(geminiKey && geminiKey.length > 10 && videoFile);
+  if (btn) btn.disabled = !(geminiKey && geminiKey.length > 10 && videoFile);
 }
+// Re-check after key decrypts (async) — poll until key is ready
+(function waitForKey() {
+  if (geminiKey && geminiKey.length > 10) { checkGeminiReady(); return; }
+  setTimeout(waitForKey, 200);
+})();
 
 function copyGeminiLog() {
   const el = document.getElementById('gemini-log');
