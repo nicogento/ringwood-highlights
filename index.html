@@ -317,31 +317,65 @@ header {
 
       <!-- PHASE 2: Options (shown after team analysis) -->
       <div id="gemini-options" style="display:none;margin-bottom:0.75rem;">
-        <div style="font-size:0.72rem;color:#888;margin-bottom:0.5rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Team</div>
-        <div id="gemini-team-options" style="display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem;">
-          <!-- Populated after team analysis -->
+        <div style="font-size:0.72rem;color:#aaa;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:rgba(66,133,244,0.08);border:1px solid rgba(66,133,244,0.2);border-radius:6px;">
+          ✓ Teams identified — select which plays to find and which team for each
         </div>
 
-        <div style="font-size:0.72rem;color:#888;margin-bottom:0.5rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Play types to find</div>
-        <div style="display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem;">
-          <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;cursor:pointer;">
-            <input type="checkbox" id="play-goals" checked> ⚽ Goals
-          </label>
-          <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;cursor:pointer;">
-            <input type="checkbox" id="play-saves"> 🧤 Goalkeeper saves
-          </label>
-          <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;cursor:pointer;">
-            <input type="checkbox" id="play-dribbles"> 🏃 Dribbles
-            <span style="font-size:0.7rem;color:#888;">(player moves with ball for &gt;
-              <input type="number" id="play-dribble-secs" value="2" min="1" max="10" style="width:2.5rem;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f5f5f5;font-size:0.7rem;padding:0.1rem 0.25rem;text-align:center;">s)
-            </span>
-          </label>
-          <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;cursor:pointer;">
-            <input type="checkbox" id="play-passing"> 🔗 Passing sequences
-            <span style="font-size:0.7rem;color:#888;">(&gt;
-              <input type="number" id="play-pass-count" value="2" min="2" max="10" style="width:2.5rem;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f5f5f5;font-size:0.7rem;padding:0.1rem 0.25rem;text-align:center;"> consecutive passes same team)
-            </span>
-          </label>
+        <div style="font-size:0.72rem;color:#888;margin-bottom:0.5rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Play types &amp; team filter</div>
+
+        <!-- Reusable team pill style via inline -->
+        <div style="display:flex;flex-direction:column;gap:0.6rem;margin-bottom:0.85rem;">
+
+          <!-- Goals -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;">
+              <input type="checkbox" id="play-goals" checked> ⚽ <strong>Goals</strong>
+            </label>
+            <div id="team-goals" style="display:flex;gap:0.4rem;flex-wrap:wrap;padding-left:1.4rem;font-size:0.72rem;">
+              <label style="cursor:pointer;"><input type="radio" name="team-goals" value="both" checked> Both</label>
+              <label style="cursor:pointer;" id="team-goals-A-lbl"><input type="radio" name="team-goals" value="teamA"> <span id="team-goals-A">Team A</span></label>
+              <label style="cursor:pointer;" id="team-goals-B-lbl"><input type="radio" name="team-goals" value="teamB"> <span id="team-goals-B">Team B</span></label>
+            </div>
+          </div>
+
+          <!-- Saves -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;">
+              <input type="checkbox" id="play-saves"> 🧤 <strong>Goalkeeper saves</strong>
+              <span style="font-size:0.68rem;color:#555;">(both GKs always shown)</span>
+            </label>
+          </div>
+
+          <!-- Dribbles -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;flex-wrap:wrap;">
+              <input type="checkbox" id="play-dribbles"> 🏃 <strong>Dribbles</strong>
+              <span style="font-size:0.7rem;color:#888;">ball carried &gt;
+                <input type="number" id="play-dribble-secs" value="2" min="1" max="10" style="width:2.5rem;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f5f5f5;font-size:0.7rem;padding:0.1rem 0.25rem;text-align:center;">s
+              </span>
+            </label>
+            <div id="team-dribbles" style="display:flex;gap:0.4rem;flex-wrap:wrap;padding-left:1.4rem;font-size:0.72rem;">
+              <label style="cursor:pointer;"><input type="radio" name="team-dribbles" value="both" checked> Both</label>
+              <label style="cursor:pointer;"><input type="radio" name="team-dribbles" value="teamA"> <span class="team-A-label">Team A</span></label>
+              <label style="cursor:pointer;"><input type="radio" name="team-dribbles" value="teamB"> <span class="team-B-label">Team B</span></label>
+            </div>
+          </div>
+
+          <!-- Passing -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;flex-wrap:wrap;">
+              <input type="checkbox" id="play-passing"> 🔗 <strong>Passing sequences</strong>
+              <span style="font-size:0.7rem;color:#888;">&gt;
+                <input type="number" id="play-pass-count" value="2" min="2" max="10" style="width:2.5rem;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f5f5f5;font-size:0.7rem;padding:0.1rem 0.25rem;text-align:center;"> passes
+              </span>
+            </label>
+            <div id="team-passing" style="display:flex;gap:0.4rem;flex-wrap:wrap;padding-left:1.4rem;font-size:0.72rem;">
+              <label style="cursor:pointer;"><input type="radio" name="team-passing" value="both" checked> Both</label>
+              <label style="cursor:pointer;"><input type="radio" name="team-passing" value="teamA"> <span class="team-A-label">Team A</span></label>
+              <label style="cursor:pointer;"><input type="radio" name="team-passing" value="teamB"> <span class="team-B-label">Team B</span></label>
+            </div>
+          </div>
+
         </div>
 
         <button class="gemini-btn" id="gemini-btn" onclick="runGeminiDetection()" style="margin-bottom:0;">
@@ -1666,22 +1700,19 @@ Be specific about the colours you can see. If there is a goalkeeper in different
     gLog(`✓ Team B: ${colB}`);
     gSetP(100);
 
-    // Show team selection options
-    const teamOpts = document.getElementById('gemini-team-options');
-    teamOpts.innerHTML = `
-      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;cursor:pointer;">
-        <input type="radio" name="team-filter" value="both" checked> Both teams
-      </label>
-      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;cursor:pointer;">
-        <input type="radio" name="team-filter" value="teamA"> Team A only — <span style="color:#888;font-size:0.75rem;">${colA}</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;cursor:pointer;">
-        <input type="radio" name="team-filter" value="teamB"> Team B only — <span style="color:#888;font-size:0.75rem;">${colB}</span>
-      </label>`;
+    // Populate team labels in each per-play-type section
+    const shortA = colA.length > 30 ? colA.slice(0,28)+'…' : colA;
+    const shortB = colB.length > 30 ? colB.slice(0,28)+'…' : colB;
+    // Update all team A/B labels
+    document.querySelectorAll('.team-A-label').forEach(el => el.textContent = 'Team A: ' + shortA);
+    document.querySelectorAll('.team-B-label').forEach(el => el.textContent = 'Team B: ' + shortB);
+    // Goals specific
+    const gA = document.getElementById('team-goals-A'); if(gA) gA.textContent = 'Team A: ' + shortA;
+    const gB = document.getElementById('team-goals-B'); if(gB) gB.textContent = 'Team B: ' + shortB;
 
     document.getElementById('gemini-options').style.display = 'block';
     document.getElementById('gemini-quick').style.display = 'none';
-    gLog('✓ Select your play types and team above, then click Step B.');
+    gLog('✓ Select your play types and team filter for each, then click Step B.');
 
   } catch(e) {
     gLog('❌ ' + e.message);
@@ -1725,11 +1756,17 @@ async function runGeminiDetection() {
   const dribbleSecs  = parseInt(document.getElementById('play-dribble-secs')?.value || '2');
   const passCount    = parseInt(document.getElementById('play-pass-count')?.value || '2');
 
-  // Read team filter
-  const teamFilter = document.querySelector('input[name="team-filter"]:checked')?.value || 'both';
-  const teamDesc = teamFilter === 'teamA' && teamColours ? teamColours.teamA
-                 : teamFilter === 'teamB' && teamColours ? teamColours.teamB
-                 : null;
+  // Read per-play-type team selections
+  const getTeamDesc = (name) => {
+    const val = document.querySelector(`input[name="${name}"]:checked`)?.value || 'both';
+    if (val === 'teamA' && teamColours) return teamColours.teamA;
+    if (val === 'teamB' && teamColours) return teamColours.teamB;
+    return null;
+  };
+  const teamDescGoals    = getTeamDesc('team-goals');
+  const teamDescDribbles = getTeamDesc('team-dribbles');
+  const teamDescPassing  = getTeamDesc('team-passing');
+  // Saves always show both teams — no team filter
 
   const btn = document.getElementById('gemini-btn');
   const quickBtn = document.getElementById('gemini-quick-btn');
@@ -1788,7 +1825,7 @@ async function runGeminiDetection() {
 
       let rawTimestamps;
       try {
-        const playConfig = { wantGoals, wantSaves, wantDribbles, wantPassing, dribbleSecs, passCount, teamDesc };
+        const playConfig = { wantGoals, wantSaves, wantDribbles, wantPassing, dribbleSecs, passCount, teamDescGoals, teamDescDribbles, teamDescPassing };
         rawTimestamps = await askGeminiForGoals(fileUri, timeOffsetS, fi + 1, filesToProcess.length, f.type || 'video/mp4', playConfig);
       } catch(e) {
         gLog(`  ⚠ Analysis failed: ${e.message}`);
@@ -1909,28 +1946,25 @@ async function waitForFileActive(fileUri) {
 async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mimeType, playConfig) {
   mimeType = mimeType || 'video/mp4';
   const fileUriFixed = fileUri.replace('/v1beta/files/', '/files/');
-  const cfg = playConfig || { wantGoals: true, wantSaves: false, wantDribbles: false, wantPassing: false, dribbleSecs: 2, passCount: 2, teamDesc: null };
+  const cfg = playConfig || { wantGoals: true, wantSaves: false, wantDribbles: false, wantPassing: false, dribbleSecs: 2, passCount: 2, teamDescGoals: null, teamDescDribbles: null, teamDescPassing: null };
 
   const offsetNote = timeOffsetS > 0
     ? `IMPORTANT: This video segment starts at ${fmtTime(timeOffsetS)} in the full match. All timestamps you return must be offset by ${fmtTime(timeOffsetS)} — i.e. if you see a play at 1:30 in this clip, return ${fmtTime(timeOffsetS + 90)}.`
     : '';
 
-  const teamNote = cfg.teamDesc
-    ? `TEAM FILTER: Only flag plays by the team wearing ${cfg.teamDesc}. Ignore plays by the opposing team. Note: goalkeeper saves are exempt from this filter — see the saves instruction below.`
-    : '';
+  const teamFilter = (desc) => desc ? ` (ONLY for the team wearing ${desc} — ignore the opposing team)` : ' (both teams)';
 
   // Build the list of play types to look for
   const playTypes = [];
-  if (cfg.wantGoals) playTypes.push(`GOALS: Flag any moment the ball might have gone into the net. CRITICAL: low confidence is fine — ALWAYS include it even if you are not sure. False positives are completely acceptable. A missed goal is far worse than a false positive. Flag if you see OR hear ANY of: ball near or entering the goal, white net moving or bulging, players from either team celebrating or reacting, crowd cheering or reacting, a whistle followed by a centre kick-off, referee pointing to the centre circle, any sudden change in energy near the goal. DO NOT exclude anything due to uncertainty.`);
-  if (cfg.wantSaves) playTypes.push(`GOALKEEPER SAVES: Show ALL saves regardless of any team colour filter — include saves by BOTH goalkeepers. The goalkeeper is the player standing directly in front of the white goal net, facing outfield towards the camera, and may be wearing any colour kit. A save occurs when a shot is heading towards that white net and the goalkeeper stops the ball from entering it — by catching, diving, punching, or deflecting it away. The ball must NOT enter the white net. Do NOT flag goals (where the ball goes INTO the net past the goalkeeper). Only flag the save moment itself.`);
-  if (cfg.wantDribbles) playTypes.push(`DRIBBLES: A single player moving with the ball for more than ${cfg.dribbleSecs} seconds, beating or evading at least one opponent.`);
-  if (cfg.wantPassing) playTypes.push(`PASSING SEQUENCES: A sequence of ${cfg.passCount} or more consecutive successful passes between players wearing the same kit colours.`);
+  if (cfg.wantGoals) playTypes.push(`GOALS${teamFilter(cfg.teamDescGoals)}: Flag any moment the ball might have gone into the net. CRITICAL: low confidence is fine — ALWAYS include it even if you are not sure. False positives are completely acceptable. A missed goal is far worse than a false positive. Flag if you see OR hear ANY of: ball near or entering the goal, white net moving or bulging, players from either team celebrating or reacting, crowd cheering or reacting, a whistle followed by a centre kick-off, referee pointing to the centre circle, any sudden change in energy near the goal. DO NOT exclude anything due to uncertainty.`);
+  if (cfg.wantSaves) playTypes.push(`GOALKEEPER SAVES (both teams — no team filter): Show ALL saves regardless of team. Include saves by BOTH goalkeepers. The goalkeeper is the player standing directly in front of the white goal net, facing outfield towards the camera, and may be wearing any colour kit. A save occurs when a shot is heading towards that white net and the goalkeeper stops the ball from entering it — by catching, diving, punching, or deflecting it away. The ball must NOT enter the white net. Do NOT flag goals (where the ball goes INTO the net past the goalkeeper). Only flag the save moment itself.`);
+  if (cfg.wantDribbles) playTypes.push(`DRIBBLES${teamFilter(cfg.teamDescDribbles)}: A single player moving with the ball for more than ${cfg.dribbleSecs} seconds, beating or evading at least one opponent.`);
+  if (cfg.wantPassing) playTypes.push(`PASSING SEQUENCES${teamFilter(cfg.teamDescPassing)}: A sequence of ${cfg.passCount} or more consecutive successful passes between players wearing the same kit colours.`);
 
   if (playTypes.length === 0) return [];
 
   const prompt = `You are a football (soccer) analyst reviewing a match video for Ringwood Town FC.
 ${offsetNote}
-${teamNote}
 
 TASK: Watch the ENTIRE video from start to finish and find every occurrence of the following play types:
 
