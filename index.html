@@ -171,6 +171,12 @@ header {
 
 /* SLIDE CARD */
 .slide-card { background:var(--card); border:1px solid rgba(240,192,64,0.18); border-left:3px solid var(--gold); border-radius:10px; margin-bottom:3px; overflow:hidden; }
+.meme-card { background:var(--card); border:1px solid rgba(64,184,100,0.18); border-left:3px solid #40b864; border-radius:10px; margin-bottom:3px; overflow:hidden; }
+.meme-card.dragging { opacity:0.3; }
+.meme-card.drag-top { border-top:2px solid #40b864; }
+.meme-card.drag-bot { border-bottom:2px solid #40b864; }
+.meme-card.drag-over { box-shadow:0 0 0 2px #40b864; }
+.meme-badge { background:rgba(64,184,100,0.15); color:#40b864; border-radius:4px; font-size:0.66rem; font-weight:700; letter-spacing:0.08em; padding:0.15rem 0.45rem; text-transform:uppercase; flex-shrink:0; }
 .slide-card.dragging { opacity:0.3; }
 .slide-card.drag-top { border-top:2px solid var(--gold); }
 .slide-card.drag-bot { border-bottom:2px solid var(--gold); }
@@ -335,7 +341,7 @@ header {
       <span style="font-size:0.85rem;color:#888;text-align:center;">🔒 Run <strong style="color:#f5f5f5">Detect Goals Automatically</strong> first</span>
     </div>
     <div class="ptitle">🎬 Full Match Review</div>
-    <div class="psub">Watch the full match to find any goals Gemini missed. Pause at the goal moment and click Add.</div>
+    <div class="psub">Watch the full match to find any plays Gemini missed (it's only looking for goals). Pause at the play moment and click Add.</div>
     <div id="wholematch-body">
       <div style="font-size:0.8rem;color:#888;padding:0.5rem 0;">Upload a match video in Step 1 to enable full match review.</div>
     </div>
@@ -656,16 +662,25 @@ function removeClip(id) {
 }
 
 function sortItemsByTs() {
-  // Build "groups": each group is any slides that precede a clip, plus the clip itself.
-  // Slides after the last clip stay at the end.
+  // Build "groups": slides before clip + clip + memes after clip, all travel together
   const groups = [];
   let pendingSlides = [];
 
   items.forEach(item => {
     if (item.type === 'slide') {
-      pendingSlides.push(item); // accumulate until we hit a clip
+      if (groups.length === 0) {
+        pendingSlides.push(item); // before first clip
+      } else {
+        pendingSlides.push(item); // between clips — will attach to next clip
+      }
+    } else if (item.type === 'meme') {
+      if (groups.length > 0) {
+        groups[groups.length - 1].memes.push(item); // attach to preceding clip
+      } else {
+        pendingSlides.push(item); // meme before any clip — keep at top
+      }
     } else if (item.type === 'clip') {
-      groups.push({ slides: pendingSlides, clip: item });
+      groups.push({ slides: pendingSlides, clip: item, memes: [] });
       pendingSlides = [];
     }
   });
@@ -673,13 +688,14 @@ function sortItemsByTs() {
   // Sort groups by clip timestamp
   groups.sort((a, b) => (parseSecs(a.clip.ts) || 0) - (parseSecs(b.clip.ts) || 0));
 
-  // Rebuild: for each group, slides first then the clip; trailing slides at end
+  // Rebuild: slides → clip → memes, then trailing items
   items = [];
   groups.forEach(g => {
     items.push(...g.slides);
     items.push(g.clip);
+    items.push(...g.memes);
   });
-  items.push(...pendingSlides); // any trailing slides with no following clip
+  items.push(...pendingSlides);
 }
 // refreshTimes removed — per-clip settings now used
 
@@ -696,6 +712,30 @@ function insertSlide(afterItemId){
   }
   renderTL();
 }
+function insertMeme(afterItemId){
+  const newMeme={type:'meme',id:uid(),videoFile:null,videoURL:null};
+  if(afterItemId===-1){
+    items.unshift(newMeme);
+  } else {
+    const idx=items.findIndex(i=>i.id===afterItemId);
+    items.splice(idx===-1?items.length:idx+1, 0, newMeme);
+  }
+  renderTL();
+}
+
+function loadMemeVideo(id, inp){
+  const f=inp.files[0]; if(!f) return;
+  if(f.size > 95*1024*1024){ alert('Meme video exceeds 95MB limit.'); return; }
+  const item=items.find(i=>i.id===id); if(!item) return;
+  if(item.videoURL) URL.revokeObjectURL(item.videoURL);
+  item.videoFile=f;
+  item.videoURL=URL.createObjectURL(f);
+  const preview=document.getElementById('meme-prev-'+id);
+  if(preview){ preview.src=item.videoURL; preview.style.display='block'; }
+  const lbl=document.getElementById('meme-lbl-'+id);
+  if(lbl) lbl.textContent='📁 '+f.name;
+}
+
 function addCurrentTimestamp() {
   const vid = document.getElementById('wm-vid');
   if (!vid) return;
@@ -720,46 +760,44 @@ function addCurrentTimestamp() {
 
 function removeItem(id){items=items.filter(i=>i.id!==id);renderTL();renderTsPanel();checkReady();}
 function sortByScorer(){
-  const clips = items.filter(i=>i.type==='clip');
-  const slides = items.filter(i=>i.type==='slide');
-  if(clips.length===0) return;
+  if(items.filter(i=>i.type==='clip').length===0) return;
 
-  // Sort clips alphabetically by scorer name (unnamed go last)
-  clips.sort((a,b)=>{
-    const na=(a.scorer||'').trim().toLowerCase();
-    const nb=(b.scorer||'').trim().toLowerCase();
+  // Build groups: slides before clip + clip + memes after clip, travel together
+  const groups = [];
+  let pendingSlides = [];
+  items.forEach(item => {
+    if (item.type === 'slide') {
+      pendingSlides.push(item);
+    } else if (item.type === 'meme') {
+      if (groups.length > 0) groups[groups.length-1].memes.push(item);
+      else pendingSlides.push(item);
+    } else if (item.type === 'clip') {
+      groups.push({ slides: pendingSlides, clip: item, memes: [] });
+      pendingSlides = [];
+    }
+  });
+
+  // Sort groups alphabetically by player name (unnamed go last)
+  groups.sort((a, b) => {
+    const na = (a.clip.scorer||'').trim().toLowerCase();
+    const nb = (b.clip.scorer||'').trim().toLowerCase();
     if(!na && !nb) return 0;
     if(!na) return 1;
     if(!nb) return -1;
     return na.localeCompare(nb);
   });
 
-  // Group sorted clips by scorer name
-  const groups = [];
-  clips.forEach(clip=>{
-    const key=(clip.scorer||'').trim().toLowerCase();
-    if(groups.length===0||groups[groups.length-1].key!==key){
-      groups.push({key, clips:[]});
-    }
-    groups[groups.length-1].clips.push(clip);
+  // Rebuild: slides → clip → memes, trailing items at end
+  items = [];
+  groups.forEach(g => {
+    items.push(...g.slides);
+    items.push(g.clip);
+    items.push(...g.memes);
   });
+  items.push(...pendingSlides);
 
-  // Build final list: clips from each group, with one slide between each group
-  // (spread remaining slides evenly as dividers; any extras go at the end)
-  const result=[];
-  const slidePool=[...slides];
-  groups.forEach((g,i)=>{
-    result.push(...g.clips);
-    // Place a slide after each group except the last (if we have slides to spare)
-    if(i<groups.length-1 && slidePool.length>0){
-      result.push(slidePool.shift());
-    }
-  });
-  // Any remaining slides go at the end
-  result.push(...slidePool);
-
-  items=result;
   renderTL();
+  renderTsPanel();
 }
 function updateScorer(id,v){const i=items.find(x=>x.id===id);if(i)i.scorer=v;}
 function updatePlayDesc(id,v){const i=items.find(x=>x.id===id);if(i)i.playDesc=v;}
@@ -888,6 +926,7 @@ function renderTL(){
   tl.appendChild(insRow(-1));
   items.forEach((item,idx)=>{
     if(item.type==='clip'){cn++;tl.appendChild(makeClipCard(item,cn));}
+    else if(item.type==='meme'){tl.appendChild(makeMemeCard(item));}
     else{tl.appendChild(makeSlideCard(item));}
     tl.appendChild(insRow(item.id));
   });
@@ -897,7 +936,8 @@ function renderTL(){
 function insRow(afterItemId){
   const d=document.createElement('div');
   d.className='ins-row';
-  d.innerHTML=`<button class="ins-btn ins-slide" onclick="insertSlide(${afterItemId})">🖼️ Player slide</button>`;
+  d.innerHTML=`<button class="ins-btn ins-slide" onclick="insertSlide(${afterItemId})">🖼️ Player slide</button>
+    <button class="ins-btn" style="border:1px dashed rgba(64,184,100,0.4);color:rgba(64,184,100,0.5);" onmouseover="this.style.background='rgba(64,184,100,0.1)';this.style.color='#40b864'" onmouseout="this.style.background='';this.style.color='rgba(64,184,100,0.5)'" onclick="insertMeme(${afterItemId})">🎬 Meme clip</button>`;
   return d;
 }
 
@@ -1019,6 +1059,34 @@ function makeSlideCard(item){
   return d;
 }
 
+function makeMemeCard(item){
+  const hasVid=!!item.videoURL;
+  const d=document.createElement('div');
+  d.className='meme-card';d.dataset.id=item.id;
+  d.innerHTML=`
+    <div class="slide-head">
+      <span class="dhandle">⣿</span>
+      <span class="meme-badge">🎬 Meme Clip</span>
+      <span class="sl-status ${hasVid?'ok':''}">${hasVid?'✓ Video ready':'No video uploaded yet'}</span>
+      <button class="btn-sm btn-del" onclick="removeItem(${item.id})" style="margin-left:auto">✕</button>
+    </div>
+    <div class="slide-body">
+      <div class="slide-row">
+        <div class="s-thumb" id="meme-thumb-${item.id}" style="background:#0a1a0a;border-color:rgba(64,184,100,0.18);">
+          ${hasVid?`<video src="${item.videoURL}" style="width:100%;height:100%;object-fit:cover;border-radius:5px;"></video>`:'🎬'}
+        </div>
+        <div class="s-ctrl">
+          <label class="ulbl ulbl-img" style="border-color:rgba(64,184,100,0.3);color:#40b864;">
+            <span id="meme-lbl-${item.id}">${hasVid?'📁 '+esc(item.videoFile?.name||'Video loaded'):'📂 Upload meme video'}</span>
+            <input type="file" accept="video/*" onchange="loadMemeVideo(${item.id},this)">
+          </label>
+          ${hasVid?`<video id="meme-prev-${item.id}" src="${item.videoURL}" controls style="width:100%;border-radius:6px;margin-top:0.4rem;max-height:120px;"></video>`:`<video id="meme-prev-${item.id}" style="display:none;width:100%;border-radius:6px;margin-top:0.4rem;max-height:120px;" controls></video>`}
+        </div>
+      </div>
+    </div>`;
+  return d;
+}
+
 // ═══════════════════════════════════════
 // DRAG & DROP
 // ═══════════════════════════════════════
@@ -1031,7 +1099,7 @@ function clearDragStyles() {
 }
 
 function initDnD() {
-  document.querySelectorAll('.clip-card,.slide-card').forEach(card => {
+  document.querySelectorAll('.clip-card,.slide-card,.meme-card').forEach(card => {
     const handle = card.querySelector('.dhandle');
     if (!handle) return;
 
@@ -1776,7 +1844,7 @@ async function processAll() {
     if (!window.MediaRecorder) throw new Error('MediaRecorder not supported. Please use Chrome or Edge.');
 
     const validItems = items.filter(i =>
-      i.type === 'slide' ? !!i.imageFile : parseSecs(i.ts) !== null
+      i.type === 'slide' ? !!i.imageFile : i.type === 'meme' ? !!i.videoFile : parseSecs(i.ts) !== null
     );
     if (validItems.length === 0) {
       log('❌ No valid clips or slides.', 'l-err');
@@ -1975,6 +2043,55 @@ async function processAll() {
           }).catch(err => { log('    ⚠ ' + err.message, 'l-err'); finish(); });
 
           setTimeout(finish, clipDurMs + 3000);
+        });
+
+        log(`    ✓ Done`, 'l-ok');
+
+      } else if (item.type === 'meme') {
+        log(`  🎬 Meme clip (${item.videoFile.name})…`, 'l-info');
+
+        // Load meme video into a dedicated element
+        const memeVid = document.createElement('video');
+        memeVid.src = item.videoURL;
+        memeVid.muted = false;
+        memeVid.volume = 1;
+        memeVid.playsInline = true;
+        memeVid.preload = 'auto';
+        await new Promise(res => { memeVid.oncanplaythrough = res; setTimeout(res, 8000); memeVid.load(); });
+        const memeSrc = audioCtx.createMediaElementSource(memeVid);
+        memeSrc.connect(muteGain);
+        memeSrc.connect(audioDest);
+
+        await new Promise(res => {
+          let done = false;
+          let memeInterval = null;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            if (memeInterval) { clearInterval(memeInterval); memeInterval = null; }
+            memeVid.pause();
+            res();
+          };
+
+          const drawMeme = () => {
+            if (done) return;
+            if (memeVid.ended || (memeVid.duration && memeVid.currentTime >= memeVid.duration - 0.05)) { finish(); return; }
+            const vw = memeVid.videoWidth || W;
+            const vh = memeVid.videoHeight || H;
+            const scale = Math.min(W / vw, H / vh);
+            const dw = vw * scale, dh = vh * scale;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+            ctx.drawImage(memeVid, (W - dw) / 2, (H - dh) / 2, dw, dh);
+          };
+
+          memeVid.currentTime = 0;
+          memeVid.play().then(() => {
+            memeInterval = setInterval(drawMeme, 1000 / 30);
+          }).catch(err => { log('    ⚠ ' + err.message, 'l-err'); finish(); });
+          // Fallback timeout: meme duration + 3s buffer
+          setTimeout(finish, ((memeVid.duration || 30) * 1000) + 3000);
+          memeVid.onended = finish;
         });
 
         log(`    ✓ Done`, 'l-ok');
