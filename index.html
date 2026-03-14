@@ -1655,6 +1655,7 @@ async function runTeamAnalysis() {
 
     if (f.size > 95 * 1024 * 1024) { gLog('❌ File too large'); analyseBtn.disabled = false; return; }
 
+    _bestModel = await getBestModel();
     gLog('📤 Uploading for analysis…');
     gSetP(20);
     const fileUri = await uploadToGeminiFiles(f, f.type || 'video/mp4', 1, 1);
@@ -1670,7 +1671,7 @@ Team B: [describe kit colours, e.g. "blue and black striped shirts, black shorts
 
 Be specific about the colours you can see. If there is a goalkeeper in different colours, describe the outfield players.`;
 
-    const res = await fetch(gUrl(`/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${geminiKey}`), {
+    const res = await fetch(gUrl(`/v1beta/models/${_bestModel || 'gemini-2.5-pro'}:generateContent?key=${geminiKey}`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1768,6 +1769,7 @@ async function runGeminiDetection() {
   const teamDescPassing  = getTeamDesc('team-passing');
   // Saves always show both teams — no team filter
 
+  _bestModel = await getBestModel();
   const btn = document.getElementById('gemini-btn');
   const quickBtn = document.getElementById('gemini-quick-btn');
   if (btn) btn.disabled = true;
@@ -1786,7 +1788,7 @@ async function runGeminiDetection() {
   try {
     const MAX_SIZE = 95 * 1024 * 1024; // 95MB — Gemini Files API limit
     const filesToProcess = videoFiles.length > 0 ? videoFiles : [videoFile];
-    gLog(`🤖 Using model: gemini-2.5-pro (play detection)`);
+    gLog(`🤖 Using model: ${_bestModel} (play detection)`);
     gLog(`📋 Processing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''}…`);
 
     const allTimestamps = [];
@@ -1956,7 +1958,7 @@ async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mi
 
   const callGemini = async (prompt) => {
     const res = await fetch(
-      gUrl(`/v1beta/models/gemini-2.5-pro:generateContent?key=${geminiKey}`),
+      gUrl(`/v1beta/models/${_bestModel || 'gemini-2.5-pro'}:generateContent?key=${geminiKey}`),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2050,6 +2052,43 @@ If none found, reply: NO PLAYS`;
 }
 
 // Retry a fetch-based fn up to maxRetries times on 429/500 errors
+// ── Best model selection ─────────────────────────────────────────────────
+// Priority order: newest/best first. We pick the first one available on the key.
+const MODEL_PRIORITY = [
+  'gemini-3.1-pro-preview',
+  'gemini-3-flash-preview',
+  'gemini-3.1-flash-lite-preview',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash-001',
+];
+let _bestModel = null; // cached until next detection run
+
+async function getBestModel() {
+  try {
+    const res = await fetch(gUrl(`/v1beta/models?key=${geminiKey}&pageSize=50`));
+    const data = await res.json();
+    const available = new Set(
+      (data.models || [])
+        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+        .map(m => m.name.replace('models/', ''))
+    );
+    for (const m of MODEL_PRIORITY) {
+      if (available.has(m)) {
+        gLog(`🤖 Best available model: ${m}`);
+        return m;
+      }
+    }
+    // Fallback: first available gemini model that supports generateContent
+    const fallback = [...available].find(m => m.includes('gemini'));
+    gLog(`🤖 Using fallback model: ${fallback}`);
+    return fallback || 'gemini-2.5-pro';
+  } catch(e) {
+    gLog(`⚠ Could not fetch models, using gemini-2.5-pro: ${e.message}`);
+    return 'gemini-2.5-pro';
+  }
+}
+
 async function withRetry(fn, label, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
