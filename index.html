@@ -392,8 +392,15 @@ header {
     <div class="dl-icon">🏆</div>
     <h3>Highlights Ready!</h3>
     <div class="dl-sub" id="dl-sub"></div>
-    <a id="dl-link" class="dl-btn" download="ringwood_highlights.webm">Download Highlights</a>
-    <br><video id="prev-vid" controls></video>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;align-items:center;width:100%;max-width:420px;margin:1rem auto 0;">
+      <a id="dl-link" class="dl-btn" download="ringwood_highlights.webm" style="width:100%;text-align:center;">⬇ Download Highlights</a>
+      <button onclick="uploadToYouTube()" style="width:100%;background:#ff0000;border:none;border-radius:8px;color:white;cursor:pointer;font-family:'Roboto Condensed',sans-serif;font-size:0.95rem;font-weight:700;letter-spacing:0.06em;padding:0.75rem 1.5rem;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:0.6rem;">
+        <svg width="20" height="14" viewBox="0 0 20 14" fill="white" xmlns="http://www.w3.org/2000/svg"><rect width="20" height="14" rx="3" fill="white"/><polygon points="8,3.5 8,10.5 14.5,7" fill="#ff0000"/></svg>
+        Upload to YouTube
+      </button>
+      <div id="yt-status" style="font-size:0.78rem;color:#888;text-align:center;display:none;"></div>
+    </div>
+    <br><video id="prev-vid" controls style="margin-top:0.5rem;"></video>
   </div>
 </div>
 </div>
@@ -2017,6 +2024,120 @@ function fmtTime(s){
   return h>0?`${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`:`${m}:${String(sec).padStart(2,'0')}`;
 }
 function fmtBytes(b){return b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';}
+// ═══════════════════════════════════════
+// YOUTUBE UPLOAD
+// ═══════════════════════════════════════
+// Uses Google Identity Services (OAuth implicit flow) to get an access token,
+// then uploads via YouTube Data API v3 resumable upload.
+// Requires a YouTube OAuth Client ID baked in below.
+const YT_CLIENT_ID = ''; // paste your OAuth Web Client ID here if you want direct upload
+
+async function uploadToYouTube() {
+  const status = document.getElementById('yt-status');
+  const dlLink = document.getElementById('dl-link');
+  const videoUrl = dlLink ? dlLink.href : null;
+
+  // If no OAuth client ID configured, fall back to download + open YouTube Studio
+  if (!YT_CLIENT_ID) {
+    status.style.display = 'block';
+    status.innerHTML = `
+      <div style="background:rgba(255,0,0,0.08);border:1px solid rgba(255,0,0,0.2);border-radius:7px;padding:0.9rem;text-align:left;line-height:1.8;">
+        <strong style="color:#f5f5f5;">To upload directly, follow these steps:</strong><br>
+        1. Your highlights file has been downloaded (or click ⬇ Download above)<br>
+        2. <a href="https://studio.youtube.com" target="_blank" style="color:#7aabf0;">Open YouTube Studio ↗</a><br>
+        3. Click <strong style="color:#f5f5f5;">CREATE → Upload videos</strong> and drag in the downloaded file
+      </div>`;
+    // Also trigger download and open YouTube Studio
+    if (dlLink && dlLink.href) dlLink.click();
+    setTimeout(() => window.open('https://studio.youtube.com', '_blank'), 500);
+    return;
+  }
+
+  // OAuth flow using Google Identity Services
+  if (!window.google?.accounts?.oauth2) {
+    // Load GIS library
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  status.style.display = 'block';
+  status.textContent = '🔐 Requesting YouTube access…';
+
+  const tokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: YT_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/youtube.upload',
+    callback: async (tokenResponse) => {
+      if (tokenResponse.error) {
+        status.textContent = '❌ Auth failed: ' + tokenResponse.error;
+        return;
+      }
+      await doYouTubeUpload(tokenResponse.access_token, status);
+    }
+  });
+  tokenClient.requestAccessToken();
+}
+
+async function doYouTubeUpload(accessToken, status) {
+  const dlLink = document.getElementById('dl-link');
+  if (!dlLink || !dlLink.href) { status.textContent = '❌ No video file ready — export first.'; return; }
+
+  status.textContent = '📡 Fetching video for upload…';
+  const resp = await fetch(dlLink.href);
+  const blob = await resp.blob();
+
+  // Step 1: Initiate resumable upload
+  status.textContent = '📤 Starting upload to YouTube…';
+  const initResp = await fetch(
+    'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': 'application/json',
+        'X-Upload-Content-Type': blob.type,
+        'X-Upload-Content-Length': blob.size
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: 'Ringwood Town FC — Goal Highlights',
+          description: 'Goal highlights compiled by Ringwood Town FC Goal Highlights Studio.',
+          tags: ['Ringwood Town FC', 'football', 'goals', 'highlights'],
+          categoryId: '17' // Sports
+        },
+        status: { privacyStatus: 'unlisted' }
+      })
+    }
+  );
+
+  if (!initResp.ok) {
+    status.textContent = '❌ Upload init failed: ' + initResp.status;
+    return;
+  }
+
+  const uploadUrl = initResp.headers.get('Location');
+
+  // Step 2: Upload the video bytes
+  status.textContent = '📤 Uploading video to YouTube (this may take a minute)…';
+  const uploadResp = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': blob.type, 'Content-Length': blob.size },
+    body: blob
+  });
+
+  if (!uploadResp.ok) {
+    status.textContent = '❌ Upload failed: ' + uploadResp.status;
+    return;
+  }
+
+  const data = await uploadResp.json();
+  const videoId = data.id;
+  status.innerHTML = `✅ <strong style="color:#40b864;">Uploaded!</strong> <a href="https://youtu.be/${videoId}" target="_blank" style="color:#7aabf0;">View on YouTube ↗</a> · <a href="https://studio.youtube.com/video/${videoId}/edit" target="_blank" style="color:#7aabf0;">Edit in Studio ↗</a>`;
+}
+
 function getMime(){return['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'video/webm';}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
