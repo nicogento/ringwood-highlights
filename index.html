@@ -903,26 +903,34 @@ async function loadEncryptedKey(password) {
 
 // ── Key UI ────────────────────────────────────────────────────────────────────
 (function initGeminiKey() {
-  // Migrate any old plaintext key to encrypted storage prompt
-  const legacy = localStorage.getItem('rtfc_gemini_key');
-  if (legacy) {
-    localStorage.removeItem('rtfc_gemini_key');
-    // Pre-fill the key field so user just needs to set a password
-    document.getElementById('gemini-key-inp').value = legacy;
-    setKeyStatus('⚠ Please set a password below to secure your key', 'key-err');
+  // If hardcoded key is present, use it silently — hide all key UI
+  if (HARDCODED_ENC_BLOB && HARDCODED_ENC_PASS) {
+    const setup = document.getElementById('gemini-key-setup');
+    if (setup) setup.style.display = 'none';
+    decryptKey(HARDCODED_ENC_BLOB, HARDCODED_ENC_PASS).then(function(apiKey) {
+      if (apiKey) { geminiKey = apiKey; checkGeminiReady(); }
+    }).catch(function(){});
+    return; // Don't check localStorage or show any UI
   }
 
-  const hasEncrypted = !!localStorage.getItem('rtfc_gemini_enc');
-  if (hasEncrypted) {
-    // Show password unlock UI
-    showPasswordPrompt();
+  // Fall back to localStorage encrypted blob
+  const stored = localStorage.getItem('rtfc_gemini_enc');
+  const storedPass = localStorage.getItem('rtfc_gemini_pass');
+  if (stored && storedPass) {
+    const setup = document.getElementById('gemini-key-setup');
+    if (setup) setup.style.display = 'none';
+    decryptKey(stored, storedPass).then(function(apiKey) {
+      if (apiKey) { geminiKey = apiKey; checkGeminiReady(); }
+    }).catch(function(){});
+    return;
   }
 
-  document.getElementById('gemini-key-inp').addEventListener('input', function() {
-    geminiKey = this.value.trim();
-    checkGeminiReady();
-    setKeyStatus('', '');
-  });
+  // No key at all — show status only (no unlock UI for end users)
+  const statusEl = document.getElementById('gemini-key-status');
+  if (statusEl) {
+    statusEl.textContent = '⚙ Gemini AI not configured';
+    statusEl.style.display = 'block';
+  }
   checkGeminiReady();
 })();
 
