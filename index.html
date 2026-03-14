@@ -1007,7 +1007,8 @@ async function testFilePrompt() {
     gLog('✓ Uploaded: ' + fileUriFixed);
 
     // Test with minimal prompt
-    const res = await fetch(gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`), {
+    const model = 'gemini-2.0-flash'; gLog('🔄 Trying model: ' + model);
+    const res = await fetch(gUrl(`/v1beta/models/${model}:generateContent?key=${geminiKey}`), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -1033,7 +1034,8 @@ async function testTextOnly() {
   document.getElementById('gemini-log').innerHTML = '';
   gLog('🧪 Testing text-only generateContent call…');
   try {
-    const res = await fetch(gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`), {
+    const model = 'gemini-2.0-flash'; gLog('🔄 Trying model: ' + model);
+    const res = await fetch(gUrl(`/v1beta/models/${model}:generateContent?key=${geminiKey}`), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({contents:[{role:'user',parts:[{text:'Say hello in one word'}]}]})
