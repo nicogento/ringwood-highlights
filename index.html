@@ -1162,7 +1162,7 @@ async function runGeminiDetection() {
   try {
     const MAX_SIZE = 95 * 1024 * 1024; // 95MB — Gemini Files API limit
     const filesToProcess = videoFiles.length > 0 ? videoFiles : [videoFile];
-    gLog(`🤖 Using model: gemini-2.5-pro`);
+    gLog(`🤖 Using model: gemini-3.1-pro-preview`);
     gLog(`📋 Processing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''}…`);
 
     const allTimestamps = [];
@@ -1340,7 +1340,7 @@ RESPONSE FORMAT:
 
   const doRequest = async () => {
     const res = await fetch(
-      gUrl(`/v1beta/models/gemini-2.5-pro:generateContent?key=${geminiKey}`),
+      gUrl(`/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${geminiKey}`),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1352,7 +1352,8 @@ RESPONSE FORMAT:
               { text: prompt }
             ]
           }],
-          generationConfig: { maxOutputTokens: 512 }
+          generationConfig: { maxOutputTokens: 1024 },
+          mediaResolution: 'media_resolution_high'
         })
       }
     );
