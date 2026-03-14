@@ -1069,7 +1069,7 @@ async function testFilePrompt() {
   document.getElementById('gemini-log').innerHTML = '';
   gLog('Testing file + prompt across models...');
   try {
-    const chunk = videoFile.slice(0, Math.min(videoFile.size, 5 * 1024 * 1024));
+    const chunk = videoFile; // use full file, not a chunk
     gLog('Uploading 5MB chunk...');
     const fu = await uploadToGeminiFiles(chunk, videoFile.type || 'video/mp4', 1, 1);
     const fuFixed = fu.replace('/v1beta/files/', '/files/');
