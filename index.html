@@ -273,16 +273,14 @@ header {
       <div class="psub">Upload the full raw XbotGo recording from the match.</div>
       <div class="dropzone" id="vdz">
         <div class="dz-icon">🎬</div>
-        <div class="dz-label">Drop video here or browse</div>
-        <div class="dz-sub">MP4, MOV, AVI, MKV — any format</div>
+        <div class="dz-label">Drop video files here or browse</div>
+        <div class="dz-sub">MP4, MOV, AVI, MKV — select multiple files for quarter/half recordings</div>
         <label class="dz-file-label">
-          📂 Browse for video
-          <input type="file" id="vid-inp" accept="video/*">
+          📂 Browse for video(s)
+          <input type="file" id="vid-inp" accept="video/*" multiple>
         </label>
       </div>
-      <div class="fbadge" id="vid-badge" style="display:none">
-        <span>📹</span><span class="fn" id="vid-name"></span><span class="fs" id="vid-size"></span>
-      </div>
+      <div id="vid-badge" style="display:none;margin-top:0.5rem;"></div>
     </div>
 
 
@@ -393,7 +391,7 @@ header {
 // ═══════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════
-let videoFile=null, videoURL=null;
+let videoFiles=[], videoFile=null, videoURL=null; // videoFiles = array; videoFile = first file for preview
 let items=[];
 let seq=0;
 const uid=()=>++seq;
@@ -407,7 +405,7 @@ const vidInp = document.getElementById('vid-inp');
 
 vidInp.onchange = function() {
   if (this.files && this.files.length > 0) {
-    loadVideo(this.files[0]);
+    loadVideos(Array.from(this.files));
   }
 };
 
@@ -417,18 +415,33 @@ vdz.addEventListener('dragleave', e => { if (!vdz.contains(e.relatedTarget)) vdz
 vdz.addEventListener('drop', e => {
   e.preventDefault(); vdz.classList.remove('over');
   if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    loadVideo(e.dataTransfer.files[0]);
+    loadVideos(Array.from(e.dataTransfer.files));
   }
 });
-function loadVideo(f){
-  videoFile=f;
-  if(videoURL)URL.revokeObjectURL(videoURL);
-  videoURL=URL.createObjectURL(f);
-  document.getElementById('vid-name').textContent=f.name;
-  document.getElementById('vid-size').textContent=fmtBytes(f.size);
-  document.getElementById('vid-badge').style.display='flex';
-  renderTL();checkReady();checkGeminiReady();
+function loadVideos(files) {
+  // Sort by name so quarters/halves are in order
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  videoFiles = files;
+  videoFile = files[0]; // first file used for preview/export
+  if (videoURL) URL.revokeObjectURL(videoURL);
+  videoURL = URL.createObjectURL(files[0]);
+
+  // Show file list badge
+  const badge = document.getElementById('vid-badge');
+  badge.style.display = 'block';
+  badge.innerHTML = files.map((f, i) =>
+    `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.8rem;">
+      <span style="color:#cc0000;font-weight:700;min-width:1.2rem;">${i+1}.</span>
+      <span style="color:#f5f5f5;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</span>
+      <span style="color:#888;flex-shrink:0;">${fmtBytes(f.size)}</span>
+    </div>`
+  ).join('') + (files.length > 1
+    ? `<div style="font-size:0.72rem;color:#888;margin-top:0.4rem;">📋 ${files.length} files — will be processed in order</div>`
+    : '');
+
+  renderTL(); checkReady(); checkGeminiReady();
 }
+function loadVideo(f) { loadVideos([f]); } // backwards compat
 
 // ═══════════════════════════════════════
 // TIMESTAMP ROWS
@@ -743,7 +756,7 @@ function initDnD() {
 // READY
 // ═══════════════════════════════════════
 function checkReady(){
-  document.getElementById('proc-btn').disabled=!(videoFile&&items.some(i=>i.type==='clip'));
+  document.getElementById('proc-btn').disabled=!((videoFiles.length>0||videoFile)&&items.some(i=>i.type==='clip'));
 }
 
 // ═══════════════════════════════════════
@@ -1048,7 +1061,7 @@ async function testTextOnly() {
   document.getElementById('gemini-log').innerHTML = '';
   gLog('🧪 Testing text-only generateContent call…');
   try {
-    const res = await fetch(gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`), {
+    const res = await fetch(gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`), { // flash for quick test
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({contents:[{role:'user',parts:[{text:'Say hello in one word'}]}]})
@@ -1063,7 +1076,8 @@ async function testTextOnly() {
 }
 
 async function testFilePrompt() {
-  if (!videoFile) { alert('Please upload a video first'); return; }
+  const _tf = videoFiles[0] || videoFile; if (!_tf) { alert('Please upload a video first'); return; }
+  videoFile = _tf;
   const prog = document.getElementById('gemini-prog');
   prog.style.display = 'block';
   document.getElementById('gemini-log').innerHTML = '';
@@ -1098,7 +1112,7 @@ async function testFilePrompt() {
 
 function checkGeminiReady() {
   const btn = document.getElementById('gemini-btn');
-  if (btn) btn.disabled = !(geminiKey && geminiKey.length > 10 && videoFile);
+  if (btn) btn.disabled = !(geminiKey && geminiKey.length > 10 && (videoFiles.length > 0 || videoFile));
 }
 // Re-check after key decrypts (async) — poll until key is ready
 (function waitForKey() {
@@ -1143,60 +1157,62 @@ async function runGeminiDetection() {
 
 
   try {
-    const fileSize = videoFile.size;
     const MAX_SIZE = 95 * 1024 * 1024; // 95MB — Gemini Files API limit
+    const filesToProcess = videoFiles.length > 0 ? videoFiles : [videoFile];
     gLog(`🤖 Using model: gemini-2.5-flash`);
-    gLog(`📦 Video is ${fmtBytes(fileSize)}`);
-
-    if (fileSize > MAX_SIZE) {
-      gLog(`⚠ File is larger than 95MB — Gemini can only accept files up to 95MB.`);
-      gLog(`  Please trim the video to under 95MB and try again.`);
-      btn.disabled = false;
-      return;
-    }
-
-    // Get total video duration
-    const dur = await getVideoDuration(videoFile);
-    gLog(`⏱ Match duration: ${fmtTime(dur)}`);
+    gLog(`📋 Processing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''}…`);
 
     const allTimestamps = [];
+    let timeOffsetS = 0; // cumulative time offset across files
 
-    // Upload the full file as a single piece — slicing video into byte chunks
-    // produces invalid video fragments that Gemini rejects
-    gLog(`\n📤 Uploading full video (${fmtBytes(fileSize)})…`);
-    gSetP(10);
+    for (let fi = 0; fi < filesToProcess.length; fi++) {
+      const f = filesToProcess[fi];
+      const fileSize = f.size;
+      const fileLabel = filesToProcess.length > 1 ? `File ${fi+1}/${filesToProcess.length}: ${f.name}` : f.name;
 
-    let fileUri;
-    try {
-      fileUri = await uploadToGeminiFiles(videoFile, videoFile.type || 'video/mp4', 1, 1);
-    } catch(e) {
-      gLog(`  ❌ Upload failed: ${e.message}`);
-      if (e.message.includes('API key')) {
-        gLog('❌ Invalid API key — please update via admin.html');
+      gLog(`\n📦 ${fileLabel} (${fmtBytes(fileSize)})`);
+
+      if (fileSize > MAX_SIZE) {
+        gLog(`  ⚠ Skipping — file exceeds 95MB limit. Please trim and re-upload.`);
+        continue;
       }
-      btn.disabled = false;
-      return;
-    }
 
-    gLog(`  ✓ Uploaded. Asking Gemini to find goals…`);
-    gSetP(70);
+      const dur = await getVideoDuration(f);
+      gLog(`  ⏱ Duration: ${fmtTime(dur)}${timeOffsetS > 0 ? ` (match time ${fmtTime(timeOffsetS)}–${fmtTime(timeOffsetS + dur)})` : ''}`);
 
-    let rawTimestamps;
-    try {
-      rawTimestamps = await askGeminiForGoals(fileUri, 0, 1, 1, videoFile.type || 'video/mp4');
-    } catch(e) {
-      gLog(`  ⚠ Analysis failed: ${e.message}`);
+      gLog(`  📤 Uploading…`);
+      gSetP(Math.round((fi / filesToProcess.length) * 60));
+
+      let fileUri;
+      try {
+        fileUri = await uploadToGeminiFiles(f, f.type || 'video/mp4', fi + 1, filesToProcess.length);
+      } catch(e) {
+        gLog(`  ❌ Upload failed: ${e.message}`);
+        if (e.message.includes('API key')) { gLog('❌ Invalid API key — please update via admin.html'); break; }
+        timeOffsetS += dur;
+        continue;
+      }
+
+      gLog(`  ✓ Uploaded. Asking Gemini to find goals…`);
+      gSetP(Math.round((fi / filesToProcess.length) * 60 + 30));
+
+      let rawTimestamps;
+      try {
+        rawTimestamps = await askGeminiForGoals(fileUri, timeOffsetS, fi + 1, filesToProcess.length, f.type || 'video/mp4');
+      } catch(e) {
+        gLog(`  ⚠ Analysis failed: ${e.message}`);
+        await deleteGeminiFile(fileUri).catch(()=>{});
+        timeOffsetS += dur;
+        continue;
+      }
+
+      gLog(`  ✓ Found ${rawTimestamps.length} goal${rawTimestamps.length !== 1 ? 's' : ''} in this file`);
+      if (rawTimestamps.length) gLog(`    → ${rawTimestamps.join(', ')}`);
+      allTimestamps.push(...rawTimestamps);
+
       await deleteGeminiFile(fileUri).catch(()=>{});
-      btn.disabled = false;
-      return;
+      timeOffsetS += dur; // advance match clock for next file
     }
-
-    gLog(`  ✓ Found ${rawTimestamps.length} goal${rawTimestamps.length!==1?'s':''}`);
-    if (rawTimestamps.length) gLog(`    → ${rawTimestamps.join(', ')}`);
-    allTimestamps.push(...rawTimestamps);
-
-    // Clean up uploaded file
-    await deleteGeminiFile(fileUri).catch(()=>{});
 
     gSetP(95);
 
@@ -1292,40 +1308,51 @@ async function waitForFileActive(fileUri) {
   throw new Error('Timed out waiting for Gemini to process file');
 }
 
-async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks) {
-  const offsetNote = timeOffsetS > 0
-    ? `IMPORTANT: This chunk starts at ${fmtTime(timeOffsetS)} in the full match. Add ${fmtTime(timeOffsetS)} to any timestamps you find.`
-    : 'This is the start of the match.';
+async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mimeType) {
+  mimeType = mimeType || 'video/mp4';
+  const fileUriFixed = fileUri.replace('/v1beta/files/', '/files/');
 
-  const prompt = `You are analysing a segment of a football (soccer) match video for Ringwood Town FC.
+  const offsetNote = timeOffsetS > 0
+    ? `IMPORTANT: This video segment starts at ${fmtTime(timeOffsetS)} in the full match. All timestamps you return must be offset by ${fmtTime(timeOffsetS)} — i.e. if you see a goal at 1:30 in this clip, return ${fmtTime(timeOffsetS + 90)}.`
+    : '';
+
+  const prompt = `You are a football (soccer) analyst reviewing a match video for Ringwood Town FC.
 ${offsetNote}
 
-Your task: identify every moment a goal is scored in this video clip.
-For each goal, give the timestamp in MM:SS format (minutes:seconds from the START OF THE FULL MATCH, accounting for the offset above).
+TASK: Watch the ENTIRE video from start to finish and identify every moment a goal is scored.
 
-Rules:
-- Only include actual goals (ball crosses the line and counts)
-- Do NOT include near-misses, saves, or celebrations without a goal
-- If there are no goals in this clip, reply with exactly: NO GOALS
-- If there are goals, reply with ONLY a comma-separated list of timestamps, e.g.: 12:34, 45:02, 67:18
-- No other text, no explanations`;
+A goal is scored when the ball fully crosses the goal line and the referee allows it. Look for:
+- The ball entering the net
+- Players celebrating
+- The referee pointing to the centre circle
+- Any stoppage of play after a shot on goal
 
-  const res = await fetch(
-    gUrl(`/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`),
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { fileData: { mimeType: 'video/mp4', fileUri } },
-            { text: prompt }
-          ]
-        }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 256 }
-      })
-    }
-  );
+For EVERY goal found, provide the timestamp in MM:SS format (time from the start of THIS video clip).
+
+RESPONSE FORMAT:
+- If NO goals: reply with exactly the word: NO GOALS
+- If goals found: reply with ONLY a comma-separated list of MM:SS timestamps, e.g.: 00:53, 12:34, 45:02
+- Do NOT include any other text, explanation, or commentary
+- Do NOT include near-misses, saved shots, or offsides — only confirmed goals`;
+
+  return await withRetry(async () => {
+    const res = await fetch(
+      gUrl(`/v1beta/models/gemini-2.5-pro:generateContent?key=${geminiKey}`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              { fileData: { mimeType, fileUri: fileUriFixed } },
+              { text: prompt }
+            ]
+          }],
+          generationConfig: { maxOutputTokens: 512 }
+        })
+      }
+    );
 
   if (!res.ok) {
     const err = await res.text();
@@ -1341,6 +1368,7 @@ Rules:
   // Parse out all MM:SS or M:SS timestamps from the response
   const matches = text.match(/\d{1,2}:\d{2}/g) || [];
   return [...new Set(matches)]; // dedupe within chunk
+  }, 'goal detection');
 }
 
 async function deleteGeminiFile(fileUri) {
