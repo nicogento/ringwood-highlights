@@ -326,6 +326,15 @@ header {
 
   </div>
 
+  <!-- FULL MATCH REVIEW -->
+  <div class="panel" id="wholematch-panel" style="margin-top:1rem;">
+    <div class="ptitle">🎬 Full Match Review</div>
+    <div class="psub">Watch the full match to find any goals Gemini missed. Pause at the goal moment and click Add.</div>
+    <div id="wholematch-body">
+      <div style="font-size:0.8rem;color:#888;padding:0.5rem 0;">Upload a match video in Step 1 to enable full match review.</div>
+    </div>
+  </div>
+
   <!-- TIMELINE -->
   <div>
     <div class="tl-head">
@@ -571,19 +580,32 @@ function playClip(id) {
   if (!v) return;
   const s = parseSecs(item.ts);
   if (s === null) return;
-  const start = Math.max(0, s - item.before);
-  const end = s + item.after;
-  v.currentTime = start;
-  v.play();
-  // Stop at end of clip window
-  const check = setInterval(() => {
-    if (v.currentTime >= end) {
+  const clipStart = Math.max(0, s - item.before);
+  const clipEnd   = Math.min(v.duration || Infinity, s + item.after);
+
+  // Remove any previous boundary enforcer for this clip
+  if (v._clipEnforcer) { v.removeEventListener('timeupdate', v._clipEnforcer); }
+
+  // Enforce clip boundary on every timeupdate
+  v._clipEnforcer = function() {
+    if (v.currentTime > clipEnd) {
       v.pause();
-      clearInterval(check);
+      v.currentTime = clipEnd;
+      v.removeEventListener('timeupdate', v._clipEnforcer);
+      v._clipEnforcer = null;
     }
-  }, 100);
-  // Clear interval if user pauses manually
-  v.addEventListener('pause', () => clearInterval(check), { once: true });
+  };
+  v.addEventListener('timeupdate', v._clipEnforcer);
+
+  // Remove enforcer if user manually pauses
+  v.addEventListener('pause', function onPause() {
+    v.removeEventListener('timeupdate', v._clipEnforcer);
+    v._clipEnforcer = null;
+    v.removeEventListener('pause', onPause);
+  }, { once: true });
+
+  v.currentTime = clipStart;
+  v.play();
 }
 
 function updateClipSetting(id,field,v){const i=items.find(x=>x.id===id);if(i){i[field]=parseInt(v);if(field==='before'){const s=parseSecs(i.ts);const vid=document.getElementById('cv_'+id);if(vid&&s!==null)vid.currentTime=Math.max(0,s-i.before);}}}
