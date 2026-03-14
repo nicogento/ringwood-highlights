@@ -1786,7 +1786,7 @@ async function runGeminiDetection() {
   try {
     const MAX_SIZE = 95 * 1024 * 1024; // 95MB — Gemini Files API limit
     const filesToProcess = videoFiles.length > 0 ? videoFiles : [videoFile];
-    gLog(`🤖 Using model: gemini-3.1-pro-preview`);
+    gLog(`🤖 Using model: gemini-2.5-pro (play detection)`);
     gLog(`📋 Processing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''}…`);
 
     const allTimestamps = [];
@@ -1952,79 +1952,101 @@ async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mi
     ? `IMPORTANT: This video segment starts at ${fmtTime(timeOffsetS)} in the full match. All timestamps you return must be offset by ${fmtTime(timeOffsetS)} — i.e. if you see a play at 1:30 in this clip, return ${fmtTime(timeOffsetS + 90)}.`
     : '';
 
-  const teamFilter = (desc) => desc ? ` (ONLY for the team wearing ${desc} — ignore the opposing team)` : ' (both teams)';
+  const teamFilter = (desc) => desc ? ` ONLY for the team wearing ${desc} — ignore the opposing team.` : '';
 
-  // Build the list of play types to look for
-  const playTypes = [];
-  if (cfg.wantGoals) playTypes.push(`GOALS${teamFilter(cfg.teamDescGoals)}: MAXIMUM SENSITIVITY — err heavily on the side of inclusion. You MUST return more timestamps than you think are goals. If there is ANY chance whatsoever that a goal was scored, flag it. Do not filter, do not second-guess, do not require certainty. A false positive costs nothing. A missed goal is a failure. Flag ALL of the following without exception: ball anywhere near the goal area, net moving or rippling even slightly, any player celebrating or raising arms, any crowd noise or reaction, any whistle, any pause in play near the goal, referee pointing anywhere, players gathering together, any moment that feels like something happened. WHEN IN DOUBT: INCLUDE IT. INCLUDE IT. INCLUDE IT.`);
-  if (cfg.wantSaves) playTypes.push(`GOALKEEPER SAVES (both teams — no team filter): Show ALL saves regardless of team. Include saves by BOTH goalkeepers. The goalkeeper is the player standing directly in front of the white goal net, facing outfield towards the camera, and may be wearing any colour kit. A save occurs when a shot is heading towards that white net and the goalkeeper stops the ball from entering it — by catching, diving, punching, or deflecting it away. The ball must NOT enter the white net. Do NOT flag goals (where the ball goes INTO the net past the goalkeeper). Only flag the save moment itself.`);
-  if (cfg.wantDribbles) playTypes.push(`DRIBBLES${teamFilter(cfg.teamDescDribbles)}: A single player who personally touches the ball multiple times in succession — the SAME player makes repeated contact with the ball (at least 3 touches) while running or moving with it for more than ${cfg.dribbleSecs} seconds. The key is repeated individual touches by one player — it is NOT a dribble if the ball merely rolls, if another player touches it, or if it is a single kicked pass. The player must be actively re-touching and controlling the ball themselves while advancing.`);
-  if (cfg.wantPassing) playTypes.push(`PASSING SEQUENCES${teamFilter(cfg.teamDescPassing)}: A sequence of ${cfg.passCount} or more consecutive successful passes between players wearing the same kit colours.`);
-
-  if (playTypes.length === 0) return [];
-
-  const prompt = `You are a football (soccer) analyst reviewing a match video for Ringwood Town FC.
-${offsetNote}
-
-TASK: Watch the ENTIRE video from start to finish and find every occurrence of the following play types:
-
-${playTypes.map((p, i) => `${i+1}. ${p}`).join('\n\n')}
-
-For EVERY play found, provide:
-- The timestamp in MM:SS format (time from the start of THIS video clip)
-- A short label for the play type: GOAL, SAVE, DRIBBLE, or PASS
-
-RESPONSE FORMAT — return ONLY lines in this exact format, one per play:
-MM:SS LABEL
-e.g.:
-00:53 GOAL
-01:22 DRIBBLE
-02:45 PASS
-03:10 SAVE
-
-If NO plays are found, reply with exactly: NO PLAYS
-Do NOT include any other text, explanation or commentary.`;
-
-  const doRequest = async () => {
+  const callGemini = async (prompt) => {
     const res = await fetch(
-      gUrl(`/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${geminiKey}`),
+      gUrl(`/v1beta/models/gemini-2.5-pro:generateContent?key=${geminiKey}`),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [
-              { fileData: { mimeType, fileUri: fileUriFixed } },
-              { text: prompt }
-            ]
-          }],
+          contents: [{ role: 'user', parts: [
+            { fileData: { mimeType, fileUri: fileUriFixed } },
+            { text: prompt }
+          ]}],
           generationConfig: { maxOutputTokens: 1024 }
         })
       }
     );
-
     if (!res.ok) {
       const err = await res.text();
       gLog(`  🔍 Full error: ${err}`);
       throw new Error(`Gemini API error (${res.status}): ${err.slice(0,600)}`);
     }
-
-    const data = await res.json();
-    const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-    gLog(`  📝 Gemini response: ${text.slice(0, 200)}`);
-
-    if (!text || text.toUpperCase().includes('NO PLAYS') || text.toUpperCase().includes('NO GOALS')) return [];
-
-    // Parse "MM:SS LABEL" lines
-    const results = [];
-    text.split('\n').forEach(line => {
-      const m = line.match(/(\d{1,2}:\d{2})\s*(\w+)?/);
-      if (m) results.push({ ts: m[1], label: (m[2] || 'GOAL').toUpperCase() });
-    });
-    return [...new Map(results.map(r => [r.ts, r])).values()]; // dedupe by timestamp
+    return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
   };
-  return await withRetry(doRequest, 'play detection');
+
+  const results = [];
+
+  // ── GOALS: dedicated separate call with maximally permissive prompt ──────
+  if (cfg.wantGoals) {
+    const teamNote = cfg.teamDescGoals ? `\nTEAM: ${teamFilter(cfg.teamDescGoals)}` : '';
+    const goalsPrompt = `You are watching a football match video.${teamNote}
+${offsetNote}
+
+YOUR ONLY JOB: find every possible moment a goal may have been scored. 
+
+YOU MUST BE EXTREMELY GENEROUS. Return EVERY timestamp where there is ANY chance of a goal. You will not be penalised for false positives — only for missing real goals.
+
+Flag IMMEDIATELY if you notice ANY of these — even if you are not certain:
+- The ball going near or towards the goal
+- The net moving, rippling or bulging at all
+- Any player raising arms, running or celebrating
+- Any change in crowd noise or energy
+- A whistle or stoppage near the goal area
+- Players gathering near the goal
+- A kick-off from the centre circle
+- The referee pointing anywhere
+- Any moment that feels like a reaction to something
+
+RESPONSE: Return ONLY a comma-separated list of MM:SS timestamps, e.g.: 00:53, 01:22, 02:45
+If truly nothing happens near the goal at all, reply: NO GOALS`;
+
+    gLog(`  ⚽ Running dedicated goal detection…`);
+    const text = await withRetry(() => callGemini(goalsPrompt), 'goal detection');
+    gLog(`  📝 Goals response: ${text.slice(0, 150)}`);
+    if (text && !text.toUpperCase().includes('NO GOALS')) {
+      const matches = text.match(/\d{1,2}:\d{2}/g) || [];
+      matches.forEach(ts => results.push({ ts, label: 'GOAL' }));
+    }
+  }
+
+  // ── OTHER PLAY TYPES: single combined call ───────────────────────────────
+  const otherTypes = [];
+  if (cfg.wantSaves) otherTypes.push(`GOALKEEPER SAVES (both teams — no team filter): The goalkeeper stands in front of the white goal net facing outfield. A save is when the goalkeeper stops a shot from entering the net by catching, diving, punching or deflecting it. Ball must NOT enter the net. Label: SAVE`);
+  if (cfg.wantDribbles) otherTypes.push(`DRIBBLES${teamFilter(cfg.teamDescDribbles) ? ' (' + teamFilter(cfg.teamDescDribbles).trim() + ')' : ''}: The SAME player repeatedly touches the ball (at least 3 touches) while running with it for more than ${cfg.dribbleSecs} seconds. Must be repeated individual touches by one player — not a rolled ball or a pass. Label: DRIBBLE`);
+  if (cfg.wantPassing) otherTypes.push(`PASSING SEQUENCES${teamFilter(cfg.teamDescPassing) ? ' (' + teamFilter(cfg.teamDescPassing).trim() + ')' : ''}: ${cfg.passCount} or more consecutive passes between players wearing the same kit colours. Label: PASS`);
+
+  if (otherTypes.length > 0) {
+    const otherPrompt = `You are watching a football match video.
+${offsetNote}
+
+Find every occurrence of these play types:
+
+${otherTypes.map((p, i) => `${i+1}. ${p}`).join('\n\n')}
+
+RESPONSE FORMAT — one line per play, nothing else:
+MM:SS LABEL
+e.g.:
+01:22 DRIBBLE
+02:45 PASS
+03:10 SAVE
+
+If none found, reply: NO PLAYS`;
+
+    gLog(`  🎬 Running other play type detection…`);
+    const text2 = await withRetry(() => callGemini(otherPrompt), 'play detection');
+    gLog(`  📝 Other plays response: ${text2.slice(0, 150)}`);
+    if (text2 && !text2.toUpperCase().includes('NO PLAYS')) {
+      text2.split('\n').forEach(line => {
+        const m = line.match(/(\d{1,2}:\d{2})\s*(\w+)?/);
+        if (m) results.push({ ts: m[1], label: (m[2] || 'PLAY').toUpperCase() });
+      });
+    }
+  }
+
+  return [...new Map(results.map(r => [r.ts, r])).values()];
 }
 
 // Retry a fetch-based fn up to maxRetries times on 429/500 errors
