@@ -324,7 +324,7 @@ header {
     <div class="panel">
       <div class="ptitle">Step 2 — Goal Timestamps</div>
       <div class="psub">Gemini auto-fills these after detection — goals are added to the timeline straight away. Add any timestamps Gemini missed here, then click "Add ▶".</div>
-      <div class="ts-tip">💡 Ask <strong>Gemini</strong>: <em>"List every goal timestamp in mm:ss format"</em></div>
+      <div class="ts-tip">💡 <em>"Every play timestamp in mm:ss format"</em></div>
       <div id="ts-list"></div>
       <button class="add-ts" onclick="addFromBlank()">+ Add timestamp</button>
     </div>
@@ -662,26 +662,28 @@ function removeClip(id) {
 }
 
 function sortItemsByTs() {
-  // Build "groups": slides before clip + clip + memes after clip, all travel together
+  // Group items: [slides...] + clip + [memes...], each group travels together
+  // Slides accumulate until a clip (they precede it)
+  // Memes accumulate after a clip (they follow it) until next slide or clip
   const groups = [];
   let pendingSlides = [];
+  let state = 'pre'; // 'pre' = before/between clips, 'post' = after a clip (collecting memes)
 
   items.forEach(item => {
     if (item.type === 'slide') {
-      if (groups.length === 0) {
-        pendingSlides.push(item); // before first clip
-      } else {
-        pendingSlides.push(item); // between clips — will attach to next clip
-      }
+      // Slides always go before the next clip
+      if (state === 'post') state = 'pre'; // switch back to pre-clip mode
+      pendingSlides.push(item);
     } else if (item.type === 'meme') {
-      if (groups.length > 0) {
-        groups[groups.length - 1].memes.push(item); // attach to preceding clip
+      if (groups.length > 0 && state === 'post') {
+        groups[groups.length - 1].memes.push(item); // attach to last clip
       } else {
-        pendingSlides.push(item); // meme before any clip — keep at top
+        pendingSlides.push(item); // meme with no preceding clip — treat as trailing
       }
     } else if (item.type === 'clip') {
       groups.push({ slides: pendingSlides, clip: item, memes: [] });
       pendingSlides = [];
+      state = 'post'; // now collecting memes for this clip
     }
   });
 
@@ -765,15 +767,18 @@ function sortByScorer(){
   // Build groups: slides before clip + clip + memes after clip, travel together
   const groups = [];
   let pendingSlides = [];
+  let state = 'pre';
   items.forEach(item => {
     if (item.type === 'slide') {
+      if (state === 'post') state = 'pre';
       pendingSlides.push(item);
     } else if (item.type === 'meme') {
-      if (groups.length > 0) groups[groups.length-1].memes.push(item);
+      if (groups.length > 0 && state === 'post') groups[groups.length-1].memes.push(item);
       else pendingSlides.push(item);
     } else if (item.type === 'clip') {
       groups.push({ slides: pendingSlides, clip: item, memes: [] });
       pendingSlides = [];
+      state = 'post';
     }
   });
 
@@ -923,21 +928,22 @@ function renderTL(){
   if(items.length===0){empty.style.display='block';tl.innerHTML='';renderTsPanel();return;}
   empty.style.display='none';tl.innerHTML='';
   let cn=0;
-  tl.appendChild(insRow(-1));
+  tl.appendChild(insRow(-1, null));
   items.forEach((item,idx)=>{
     if(item.type==='clip'){cn++;tl.appendChild(makeClipCard(item,cn));}
     else if(item.type==='meme'){tl.appendChild(makeMemeCard(item));}
     else{tl.appendChild(makeSlideCard(item));}
-    tl.appendChild(insRow(item.id));
+    tl.appendChild(insRow(item.id, item.type));
   });
   initDnD();
 }
 
-function insRow(afterItemId){
+function insRow(afterItemId, prevType){
   const d=document.createElement('div');
   d.className='ins-row';
+  const showMeme = prevType==='clip' || prevType==='meme';
   d.innerHTML=`<button class="ins-btn ins-slide" onclick="insertSlide(${afterItemId})">🖼️ Player slide</button>
-    <button class="ins-btn" style="border:1px dashed rgba(64,184,100,0.4);color:rgba(64,184,100,0.5);" onmouseover="this.style.background='rgba(64,184,100,0.1)';this.style.color='#40b864'" onmouseout="this.style.background='';this.style.color='rgba(64,184,100,0.5)'" onclick="insertMeme(${afterItemId})">🎬 Meme clip</button>`;
+    ${showMeme ? `<button class="ins-btn" style="border:1px dashed rgba(64,184,100,0.4);color:rgba(64,184,100,0.5);" onmouseover="this.style.background='rgba(64,184,100,0.1)';this.style.color='#40b864'" onmouseout="this.style.background='';this.style.color='rgba(64,184,100,0.5)'" onclick="insertMeme(${afterItemId})">🎬 Meme clip</button>` : ''}`;
   return d;
 }
 
