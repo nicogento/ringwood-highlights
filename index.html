@@ -1212,15 +1212,16 @@ async function uploadToGeminiFiles(blob, mimeType, chunkNum, totalChunks) {
 
 async function waitForFileActive(fileUri) {
   const fileId = fileUri.split('/').pop();
+  gLog(`  ⏳ Waiting for file to be processed (id: ${fileId})…`);
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 3000));
-    const res = await fetch(
-      gUrl(`/v1beta/files/${fileId}?key=${geminiKey}`)
-    );
+    const res = await fetch(gUrl(`/v1beta/files/${fileId}?key=${geminiKey}`));
     if (!res.ok) continue;
     const data = await res.json();
-    if (data.state === 'ACTIVE') return fileUri;
-    if (data.state === 'FAILED') throw new Error('Gemini file processing failed');
+    const state = data?.state || data?.file?.state;
+    gLog(`  📄 File state: ${state} (check ${i+1})`);
+    if (state === 'ACTIVE') return fileUri;
+    if (state === 'FAILED') throw new Error('Gemini file processing failed');
   }
   throw new Error('Timed out waiting for Gemini to process file');
 }
