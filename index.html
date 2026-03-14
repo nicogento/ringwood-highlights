@@ -291,7 +291,7 @@ header {
       <div class="psub">Let Google's Gemini AI watch the match video and find every goal automatically. Timestamps are added straight to your timeline.</div>
 
 
-      <div class="gemini-setup" id="gemini-key-setup">
+      <div class="gemini-setup" id="gemini-key-setup" style="display:none">
         <div class="gemini-setup-title">🔑 One-time setup — your free Google AI key</div>
         <div class="gemini-steps">
           <strong>1.</strong> Open <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> in a new tab<br>
@@ -309,9 +309,9 @@ header {
         <div class="key-status" id="key-status"></div>
       </div>
 
-      <button class="btn-sm" onclick="listGeminiModels()" style="margin-bottom:0.5rem;width:100%;background:rgba(66,133,244,0.1);border-color:rgba(66,133,244,0.3);color:#7aabf0;">🔍 List available models</button>
-      <button class="btn-sm" onclick="testTextOnly()" style="margin-bottom:0.5rem;width:100%;background:rgba(64,184,100,0.1);border-color:rgba(64,184,100,0.3);color:#40b864;">🧪 Test API (text only)</button>
-      <button class="btn-sm" onclick="testFilePrompt()" style="margin-bottom:0.5rem;width:100%;background:rgba(240,192,64,0.1);border-color:rgba(240,192,64,0.3);color:#f0c040;">🎥 Test file + prompt (upload video first)</button>
+      <button class="btn-sm" onclick="listGeminiModels()" style="display:none;margin-bottom:0.5rem;width:100%;background:rgba(66,133,244,0.1);border-color:rgba(66,133,244,0.3);color:#7aabf0;">🔍 List available models</button>
+      <button class="btn-sm" onclick="testTextOnly()" style="display:none;margin-bottom:0.5rem;width:100%;background:rgba(64,184,100,0.1);border-color:rgba(64,184,100,0.3);color:#40b864;">🧪 Test API (text only)</button>
+      <button class="btn-sm" onclick="testFilePrompt()" style="display:none;margin-bottom:0.5rem;width:100%;background:rgba(240,192,64,0.1);border-color:rgba(240,192,64,0.3);color:#f0c040;">🎥 Test file + prompt (upload video first)</button>
       <button class="gemini-btn" id="gemini-btn" onclick="runGeminiDetection()" disabled>
         <span>🤖</span> Detect Goals Automatically
       </button>
