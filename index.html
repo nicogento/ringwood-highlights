@@ -928,28 +928,44 @@ function renderTL(){
   if(items.length===0){empty.style.display='block';tl.innerHTML='';renderTsPanel();return;}
   empty.style.display='none';tl.innerHTML='';
   let cn=0;
-  tl.appendChild(insRow(-1, null));
-  items.forEach((item,idx)=>{
+  // Find the ID of the next clip after a given index (for player slide insertion)
+  const nextClipId = (fromIdx) => {
+    for (let i = fromIdx + 1; i < items.length; i++) {
+      if (items[i].type === 'clip') return items[i].id;
+    }
+    return -1; // no next clip — insert at end
+  };
+  tl.appendChild(insRow(-1, null, items.length > 0 && items[0].type === 'clip' ? items[0].id : -1));
+  items.forEach((item, idx) => {
     if(item.type==='clip'){cn++;tl.appendChild(makeClipCard(item,cn));}
     else if(item.type==='meme'){tl.appendChild(makeMemeCard(item));}
     else{tl.appendChild(makeSlideCard(item));}
-    tl.appendChild(insRow(item.id, item.type));
+    // For the row after this item:
+    // memeAfterId = this item's id (insert meme after current item = after clip above)
+    // slideBeforeId = id of the next clip below, or -1 (insert slide before next clip)
+    const nc = nextClipId(idx);
+    // insertSlide(beforeClipId) should insert BEFORE that clip, not after — 
+    // pass the id of the item just before the next clip
+    const slideInsertAfterId = nc === -1 ? item.id : (() => {
+      const ncIdx = items.findIndex(i => i.id === nc);
+      return ncIdx > 0 ? items[ncIdx - 1].id : -1;
+    })();
+    tl.appendChild(insRow(item.id, item.type, slideInsertAfterId));
   });
   initDnD();
 }
 
-function insRow(afterItemId, prevType){
+function insRow(memeAfterId, prevType, slideAfterId){
   const d=document.createElement('div');
   d.className='ins-row';
   d.style.cssText='flex-direction:column;gap:2px;';
-  const memeBtn = `<button class="ins-btn" style="border:1px dashed rgba(64,184,100,0.35);color:rgba(64,184,100,0.5);font-size:0.65rem;" onmouseover="this.style.background='rgba(64,184,100,0.08)';this.style.color='#40b864'" onmouseout="this.style.background='';this.style.color='rgba(64,184,100,0.5)'" onclick="insertMeme(${afterItemId})">🎬 + Meme clip after clip above</button>`;
-  const slideBtn = `<button class="ins-btn ins-slide" style="font-size:0.65rem;" onclick="insertSlide(${afterItemId})">🖼️ + Player slide before clip below</button>`;
-  if (prevType === 'clip') {
-    d.innerHTML = memeBtn; // only meme — no slide between clip and its meme
-  } else if (prevType === 'meme') {
-    d.innerHTML = memeBtn + slideBtn; // another meme OR start of next clip's slide
+  const sId = slideAfterId !== undefined ? slideAfterId : memeAfterId;
+  const memeBtn = `<button class="ins-btn" style="border:1px dashed rgba(64,184,100,0.35);color:rgba(64,184,100,0.5);font-size:0.65rem;" onmouseover="this.style.background='rgba(64,184,100,0.08)';this.style.color='#40b864'" onmouseout="this.style.background='';this.style.color='rgba(64,184,100,0.5)'" onclick="insertMeme(${memeAfterId})">🎬 + Meme clip after clip above</button>`;
+  const slideBtn = `<button class="ins-btn ins-slide" style="font-size:0.65rem;" onclick="insertSlide(${sId})">🖼️ + Player slide before clip below</button>`;
+  if (prevType === 'clip' || prevType === 'meme') {
+    d.innerHTML = memeBtn + slideBtn;
   } else {
-    d.innerHTML = slideBtn; // top of list or after a slide
+    d.innerHTML = slideBtn;
   }
   return d;
 }
