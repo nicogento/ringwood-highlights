@@ -450,6 +450,14 @@ vdz.addEventListener('drop', e => {
 });
 
 async function loadVideos(files) {
+  const MAX = 95 * 1024 * 1024;
+  const oversized = files.filter(f => f.size > MAX);
+  if (oversized.length > 0) {
+    const names = oversized.map(f => `• ${f.name} (${fmtBytes(f.size)})`).join('\n');
+    alert(`The following file${oversized.length > 1 ? 's are' : ' is'} over the 95MB limit and cannot be uploaded:\n\n${names}\n\nPlease trim or compress the video${oversized.length > 1 ? 's' : ''} and try again.`);
+    files = files.filter(f => f.size <= MAX);
+    if (files.length === 0) return;
+  }
   files.sort((a, b) => a.name.localeCompare(b.name));
   videoFiles = files;
   videoFile = files[0];
