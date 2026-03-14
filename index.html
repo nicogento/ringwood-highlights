@@ -439,6 +439,15 @@ function loadVideos(files) {
     : '');
 
   renderTL(); checkReady(); checkGeminiReady();
+  // Update whole match panel
+  const wmb = document.getElementById('wholematch-body');
+  if (wmb) {
+    wmb.innerHTML = `<video id="whole-match-vid" src="${videoURL}" controls style="width:100%;border-radius:8px;margin-bottom:0.6rem;"></video>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <button class="btn-sm" style="background:rgba(204,0,0,0.15);border-color:rgba(204,0,0,0.4);color:#ff8080;" onclick="addCurrentTimestamp()">＋ Add current timestamp</button>
+        <span style="font-size:0.75rem;color:#888;">Pause on the goal moment then click Add</span>
+      </div>`;
+  }
 }
 function loadVideo(f) { loadVideos([f]); } // backwards compat
 
@@ -482,6 +491,25 @@ function insertSlide(afterItemId){
   }
   renderTL();
 }
+function addCurrentTimestamp() {
+  const v = document.getElementById('whole-match-vid');
+  if (!v) return;
+  const secs = Math.floor(v.currentTime);
+  const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+  const ss = String(secs % 60).padStart(2, '0');
+  const ts = mm + ':' + ss;
+  if (items.find(i => i.type === 'clip' && i.ts === ts)) {
+    alert(ts + ' is already in the timeline.');
+    return;
+  }
+  items.push({ type: 'clip', id: uid(), ts, scorer: '', before: 2, after: 2, overlay: true });
+  renderTL();
+  checkReady();
+  // Flash confirmation
+  const btn = document.querySelector('#wholematch-panel button');
+  if (btn) { const orig = btn.textContent; btn.textContent = '✓ Added ' + ts; setTimeout(() => btn.textContent = orig, 1500); }
+}
+
 function removeItem(id){items=items.filter(i=>i.id!==id);renderTL();checkReady();}
 function sortByScorer(){
   const clips = items.filter(i=>i.type==='clip');
@@ -526,6 +554,38 @@ function sortByScorer(){
   renderTL();
 }
 function updateScorer(id,v){const i=items.find(x=>x.id===id);if(i)i.scorer=v;}
+function resetClip(id) {
+  const item = items.find(x => x.id === id);
+  if (!item) return;
+  const v = document.getElementById('cv_' + id);
+  if (!v) return;
+  const s = parseSecs(item.ts);
+  if (s !== null) v.currentTime = Math.max(0, s - item.before);
+  v.pause();
+}
+
+function playClip(id) {
+  const item = items.find(x => x.id === id);
+  if (!item) return;
+  const v = document.getElementById('cv_' + id);
+  if (!v) return;
+  const s = parseSecs(item.ts);
+  if (s === null) return;
+  const start = Math.max(0, s - item.before);
+  const end = s + item.after;
+  v.currentTime = start;
+  v.play();
+  // Stop at end of clip window
+  const check = setInterval(() => {
+    if (v.currentTime >= end) {
+      v.pause();
+      clearInterval(check);
+    }
+  }, 100);
+  // Clear interval if user pauses manually
+  v.addEventListener('pause', () => clearInterval(check), { once: true });
+}
+
 function updateClipSetting(id,field,v){const i=items.find(x=>x.id===id);if(i){i[field]=parseInt(v);if(field==='before'){const s=parseSecs(i.ts);const vid=document.getElementById('cv_'+id);if(vid&&s!==null)vid.currentTime=Math.max(0,s-i.before);}}}
 function updateOverlay(id,v){const i=items.find(x=>x.id===id);if(i)i.overlay=v;}
 function updateDur(id,v){const i=items.find(x=>x.id===id);if(i)i.duration=parseInt(v);}
@@ -622,7 +682,13 @@ function makeClipCard(item,num){
     </div>
     <div class="clip-body">
       ${videoURL
-        ?`<video id="cv_${item.id}" src="${videoURL}" controls preload="metadata"></video>`
+        ?`<div style="position:relative">
+            <video id="cv_${item.id}" src="${videoURL}" controls preload="metadata"></video>
+            <div style="display:flex;gap:0.4rem;margin-top:0.35rem;">
+              <button class="btn-sm" onclick="resetClip(${item.id})" title="Jump to clip start">⏮ Reset</button>
+              <button class="btn-sm" style="background:rgba(204,0,0,0.15);border-color:rgba(204,0,0,0.4);color:#ff8080;" onclick="playClip(${item.id})" title="Play just this clip window">▶ Play clip</button>
+            </div>
+          </div>`
         :`<div class="no-vid">Upload match video to preview clip</div>`}
       <div class="clip-settings">
         <div class="clip-setting">
