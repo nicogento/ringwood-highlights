@@ -656,34 +656,30 @@ function removeClip(id) {
 }
 
 function sortItemsByTs() {
-  // Build "groups": each group is a clip + any slides that immediately follow it.
-  // Slides before the first clip form a "pre-group" that stays at the top.
+  // Build "groups": each group is any slides that precede a clip, plus the clip itself.
+  // Slides after the last clip stay at the end.
   const groups = [];
-  let preSlides = [];
-  let foundFirstClip = false;
+  let pendingSlides = [];
 
   items.forEach(item => {
-    if (item.type === 'clip') {
-      foundFirstClip = true;
-      groups.push({ clip: item, slides: [] });
-    } else if (item.type === 'slide') {
-      if (!foundFirstClip) {
-        preSlides.push(item); // slides before any clip stay at top
-      } else {
-        groups[groups.length - 1].slides.push(item); // attach to preceding clip
-      }
+    if (item.type === 'slide') {
+      pendingSlides.push(item); // accumulate until we hit a clip
+    } else if (item.type === 'clip') {
+      groups.push({ slides: pendingSlides, clip: item });
+      pendingSlides = [];
     }
   });
 
   // Sort groups by clip timestamp
   groups.sort((a, b) => (parseSecs(a.clip.ts) || 0) - (parseSecs(b.clip.ts) || 0));
 
-  // Rebuild items: pre-slides first, then each clip followed by its slides
-  items = [...preSlides];
+  // Rebuild: for each group, slides first then the clip; trailing slides at end
+  items = [];
   groups.forEach(g => {
-    items.push(g.clip);
     items.push(...g.slides);
+    items.push(g.clip);
   });
+  items.push(...pendingSlides); // any trailing slides with no following clip
 }
 // refreshTimes removed — per-clip settings now used
 
