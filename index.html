@@ -1322,20 +1322,27 @@ async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mi
   const prompt = `You are a football (soccer) analyst reviewing a match video for Ringwood Town FC.
 ${offsetNote}
 
-TASK: Watch the ENTIRE video from start to finish and identify every moment a goal is scored.
+TASK: Watch the ENTIRE video from start to finish and flag every moment that might be a goal.
 
-A goal is scored when the ball passes the goalkeeper and fully crosses the goal line into the net. Look for:
-- The ball physically entering and hitting the back of the net, past the goalkeeper
-- The goalkeeper beaten — ball goes beyond their reach and crosses the line
-- Players immediately celebrating after the ball enters the net
+CRITICAL INSTRUCTION: It is far better to return too many timestamps than to miss a real goal. When in doubt, INCLUDE IT. False positives are completely fine and expected — missed goals are not acceptable.
 
-For EVERY goal found, provide the timestamp in MM:SS format (time from the start of THIS video clip).
+Flag a timestamp if you see OR hear ANY of the following:
+- The ball going anywhere near the goal
+- The net moving or rippling at all
+- Players from either team celebrating or running together
+- Any crowd reaction, cheering, or excitement
+- A whistle followed by a centre kick-off
+- Audio cues suggesting a goal (shouting, cheering, commentary excitement)
+- Any sudden change in the energy or pace of play near the goal area
+- The referee pointing to the centre circle
+
+For EVERY possible goal moment, provide the timestamp in MM:SS format (time from the start of THIS video clip).
 
 RESPONSE FORMAT:
-- If NO goals: reply with exactly the word: NO GOALS
-- If goals found: reply with ONLY a comma-separated list of MM:SS timestamps, e.g.: 00:53, 12:34, 45:02
+- If nothing at all happens near the goal: reply with exactly the word: NO GOALS
+- If there are any possible goal moments: reply with ONLY a comma-separated list of MM:SS timestamps, e.g.: 00:53, 12:34, 45:02
 - Do NOT include any other text, explanation, or commentary
-- Do NOT include near-misses, saved shots, or offsides — only confirmed goals`;
+- Include near-misses if you are unsure — it is better to over-report`;
 
   const doRequest = async () => {
     const res = await fetch(
