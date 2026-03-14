@@ -1772,13 +1772,45 @@ async function processAll() {
       return;
     }
 
-    log('📁 Reading match video…');
-    const mv = document.createElement('video');
-    mv.src = videoURL; mv.preload = 'metadata';
-    await new Promise((res, rej) => { mv.onloadedmetadata = res; mv.onerror = rej; });
-    const totalDur = mv.duration;
-    log(`✓ ${videoFile.name} — ${fmtTime(totalDur)}`, 'l-ok');
+    log('📁 Reading match video files…');
+
+    // Pre-create one video element per file, all connected to the same AudioContext
+    // so we can swap between files per clip without re-creating the audio graph
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+    const audioDest = audioCtx.createMediaStreamDestination();
+    const muteGain  = audioCtx.createGain();
+    muteGain.gain.value = 0;
+    muteGain.connect(audioCtx.destination);
+
+    // Build one video element per source file
+    const videoEls = await Promise.all(fileURLs.map(async (url, fi) => {
+      const v = document.createElement('video');
+      v.src = url;
+      v.muted = false;
+      v.volume = 1;
+      v.playsInline = true;
+      v.preload = 'auto';
+      await new Promise(res => { v.oncanplaythrough = res; setTimeout(res, 8000); v.load(); });
+      // Connect this file's audio to the shared recorder destination
+      const src = audioCtx.createMediaElementSource(v);
+      src.connect(muteGain);       // → speakers (silent)
+      src.connect(audioDest);      // → recorder (full volume)
+      log(`✓ File ${fi+1}: ${videoFiles[fi].name}`, 'l-ok');
+      return v;
+    }));
+
+    // Use file 0 for total duration display
+    const totalDur = videoEls[0].duration;
+    log(`✓ ${videoFiles.length} file${videoFiles.length>1?'s':''} ready`, 'l-ok');
     setP(5);
+
+    // Helper: get the right video element and local seek time for a match timestamp
+    function getVideoForMatchSecs(matchSecs) {
+      const fi = getFileForTime(matchSecs);
+      return { v: videoEls[fi.fileIdx], localTime: fi.localTime, fileDur: fileDurations[fi.fileIdx] };
+    }
 
     // Load badge from embedded data URL into an Image for canvas drawing
     const badgeImg = await new Promise(res => {
@@ -1794,36 +1826,6 @@ async function processAll() {
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
-
-    // ── Audio pipeline ────────────────────────────────────────────────────────
-    // Clicking "Merge" is a user gesture — resume AudioContext immediately
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
-
-    // Video element — unmuted, full volume so AudioContext graph gets the real signal
-    // (Chrome silences the AudioContext source node when volume=0, so we can't use that trick)
-    // The tab won't audibly play during export in most cases, and even if it does it's brief
-    const video = document.createElement('video');
-    video.src = videoURL;
-    video.muted = false;
-    video.volume = 1;
-    video.playsInline = true;
-    video.preload = 'auto';
-    await new Promise((res) => {
-      video.oncanplaythrough = res;
-      setTimeout(res, 8000);
-      video.load();
-    });
-
-    // Route video audio: source → gainNode (silent to speakers) + audioDest (to recorder)
-    // GainNode at 0 mutes speakers without affecting the recorder branch
-    const videoSource  = audioCtx.createMediaElementSource(video);
-    const muteGain     = audioCtx.createGain();
-    muteGain.gain.value = 0;                          // silent in speakers
-    const audioDest    = audioCtx.createMediaStreamDestination();
-    videoSource.connect(muteGain);
-    muteGain.connect(audioCtx.destination);           // → speakers (silent)
-    videoSource.connect(audioDest);                   // → recorder (full volume)
 
     // Combine canvas video track + audio track into one stream for MediaRecorder
     const videoStream = canvas.captureStream(30);
@@ -1850,10 +1852,14 @@ async function processAll() {
 
       if (item.type === 'clip') {
         const secs = parseSecs(item.ts);
-        const st   = Math.max(0, secs - item.before);
-        const en   = Math.min(totalDur, secs + item.after);
+        const { v: video, localTime, fileDur } = getVideoForMatchSecs(secs);
+        const st   = Math.max(0, localTime - item.before);
+        const en   = Math.min(fileDur, localTime + item.after);
         const clipDurMs = (en - st) * 1000;
         log(`  ⚽ Clip ${idx + 1}: ${item.ts}${item.scorer ? ' — ' + item.scorer : ''} (${fmtTime(st)}–${fmtTime(en)})`, 'l-info');
+
+        // Pause all other video elements first
+        videoEls.forEach(ve => { if (ve !== video) ve.pause(); });
 
         // Seek to start and wait for seek to complete
         await new Promise(res => {
