@@ -935,7 +935,7 @@ function renderTL(){
     }
     return -1; // no next clip — insert at end
   };
-  tl.appendChild(insRow(-1, null, items.length > 0 && items[0].type === 'clip' ? items[0].id : -1));
+  tl.appendChild(insRow(-1, null, -1));
   items.forEach((item, idx) => {
     if(item.type==='clip'){cn++;tl.appendChild(makeClipCard(item,cn));}
     else if(item.type==='meme'){tl.appendChild(makeMemeCard(item));}
