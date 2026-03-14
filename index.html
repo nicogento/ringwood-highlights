@@ -397,45 +397,55 @@ header {
 // ═══════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════
-let videoFiles=[], videoFile=null, videoURL=null; // videoFiles = array; videoFile = first file for preview
+let videoFiles=[], videoFile=null, videoURL=null; // videoFile/videoURL = first file (legacy compat)
+let fileURLs=[];       // object URLs for each file
+let fileDurations=[];  // duration of each file in seconds
+let fileOffsets=[];    // cumulative start time of each file in stitched match
+let totalMatchDuration=0;
 let items=[];
 let seq=0;
 const uid=()=>++seq;
 
+// Given a match timestamp (seconds), return which file it falls in and the local time within that file
+function getFileForTime(matchSecs) {
+  for (let i = fileOffsets.length - 1; i >= 0; i--) {
+    if (matchSecs >= fileOffsets[i]) {
+      return {
+        fileIdx: i,
+        url: fileURLs[i],
+        localTime: matchSecs - fileOffsets[i]
+      };
+    }
+  }
+  return { fileIdx: 0, url: fileURLs[0] || videoURL, localTime: matchSecs };
+}
+
 // ═══════════════════════════════════════
 // VIDEO UPLOAD
 // ═══════════════════════════════════════
-// Video file input — plain change handler, no tricks
 const vdz = document.getElementById('vdz');
 const vidInp = document.getElementById('vid-inp');
 
 vidInp.onchange = function() {
-  if (this.files && this.files.length > 0) {
-    loadVideos(Array.from(this.files));
-  }
+  if (this.files && this.files.length > 0) loadVideos(Array.from(this.files));
 };
-
-// Click dropzone (but not the button itself) to open file picker
-vdz.addEventListener('click', e => {
-  if (e.target.tagName !== 'BUTTON') vidInp.click();
-});
-
-// Drag and drop
+vdz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') vidInp.click(); });
 vdz.addEventListener('dragover', e => { e.preventDefault(); vdz.classList.add('over'); });
 vdz.addEventListener('dragleave', e => { if (!vdz.contains(e.relatedTarget)) vdz.classList.remove('over'); });
 vdz.addEventListener('drop', e => {
   e.preventDefault(); vdz.classList.remove('over');
-  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    loadVideos(Array.from(e.dataTransfer.files));
-  }
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) loadVideos(Array.from(e.dataTransfer.files));
 });
-function loadVideos(files) {
-  // Sort by name so quarters/halves are in order
+
+async function loadVideos(files) {
   files.sort((a, b) => a.name.localeCompare(b.name));
   videoFiles = files;
-  videoFile = files[0]; // first file used for preview/export
-  if (videoURL) URL.revokeObjectURL(videoURL);
-  videoURL = URL.createObjectURL(files[0]);
+  videoFile = files[0];
+
+  // Revoke old URLs
+  fileURLs.forEach(u => URL.revokeObjectURL(u));
+  fileURLs = files.map(f => URL.createObjectURL(f));
+  videoURL = fileURLs[0];
 
   // Show file list badge
   const badge = document.getElementById('vid-badge');
@@ -447,21 +457,98 @@ function loadVideos(files) {
       <span style="color:#888;flex-shrink:0;">${fmtBytes(f.size)}</span>
     </div>`
   ).join('') + (files.length > 1
-    ? `<div style="font-size:0.72rem;color:#888;margin-top:0.4rem;">📋 ${files.length} files — will be processed in order</div>`
+    ? `<div style="font-size:0.72rem;color:#888;margin-top:0.4rem;">📋 ${files.length} files — stitched for playback</div>`
     : '');
 
+  // Compute durations and offsets for all files
+  fileDurations = await Promise.all(files.map(f => getVideoDuration(f)));
+  fileOffsets = [];
+  let offset = 0;
+  fileDurations.forEach(d => { fileOffsets.push(offset); offset += d; });
+  totalMatchDuration = offset;
+
   renderTL(); checkReady(); checkGeminiReady();
-  // Update whole match panel
+  buildWholeMatchPlayer();
+}
+function loadVideo(f) { loadVideos([f]); } // backwards compat
+
+// ═══════════════════════════════════════
+// STITCHED FULL MATCH PLAYER
+// ═══════════════════════════════════════
+let wmCurrentFile = 0;
+let wmMatchTime = 0; // current match time in seconds
+
+function buildWholeMatchPlayer() {
   const wmb = document.getElementById('wholematch-body');
-  if (wmb) {
-    wmb.innerHTML = `<video id="whole-match-vid" src="${videoURL}" controls style="width:100%;border-radius:8px;margin-bottom:0.6rem;"></video>
+  if (!wmb || fileURLs.length === 0) return;
+
+  if (fileURLs.length === 1) {
+    // Single file — plain video player
+    wmb.innerHTML = `
+      <video id="wm-vid" src="${fileURLs[0]}" controls style="width:100%;border-radius:8px;margin-bottom:0.6rem;"></video>
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
         <button class="btn-sm" style="background:rgba(204,0,0,0.15);border-color:rgba(204,0,0,0.4);color:#ff8080;" onclick="addCurrentTimestamp()">＋ Add current timestamp</button>
         <span style="font-size:0.75rem;color:#888;">Pause on the goal moment then click Add</span>
       </div>`;
+    return;
+  }
+
+  // Multiple files — stitched player with match time display
+  wmb.innerHTML = `
+    <div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;font-size:0.75rem;color:#888;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+      <span>📹 File <strong id="wm-file-label" style="color:#f5f5f5;">1/${fileURLs.length}</strong></span>
+      <span>⏱ Match time: <strong id="wm-match-time" style="color:#f5f5f5;">00:00</strong> / ${fmtTime(totalMatchDuration)}</span>
+    </div>
+    <video id="wm-vid" src="${fileURLs[0]}" controls style="width:100%;border-radius:8px;margin-bottom:0.5rem;"></video>
+    <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem;">
+      ${fileURLs.map((_, i) => `<button class="btn-sm" id="wm-seg-${i}" onclick="wmJumpToFile(${i})" style="${i===0?'background:rgba(204,0,0,0.2);border-color:rgba(204,0,0,0.5);color:#ff8080;':''}">Part ${i+1}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+      <button class="btn-sm" style="background:rgba(204,0,0,0.15);border-color:rgba(204,0,0,0.4);color:#ff8080;" onclick="addCurrentTimestamp()">＋ Add current timestamp</button>
+      <span style="font-size:0.75rem;color:#888;">Pause on the goal moment then click Add</span>
+    </div>`;
+
+  // Wire up timeupdate to show match time and auto-advance
+  wmCurrentFile = 0;
+  const vid = document.getElementById('wm-vid');
+  if (vid) {
+    vid.addEventListener('timeupdate', wmTimeUpdate);
+    vid.addEventListener('ended', wmAdvance);
   }
 }
-function loadVideo(f) { loadVideos([f]); } // backwards compat
+
+function wmTimeUpdate() {
+  const vid = document.getElementById('wm-vid');
+  if (!vid) return;
+  const matchTime = fileOffsets[wmCurrentFile] + vid.currentTime;
+  const el = document.getElementById('wm-match-time');
+  if (el) el.textContent = fmtTime(matchTime);
+}
+
+function wmAdvance() {
+  if (wmCurrentFile + 1 < fileURLs.length) {
+    wmJumpToFile(wmCurrentFile + 1);
+    document.getElementById('wm-vid').play();
+  }
+}
+
+function wmJumpToFile(idx) {
+  wmCurrentFile = idx;
+  const vid = document.getElementById('wm-vid');
+  if (!vid) return;
+  vid.src = fileURLs[idx];
+  vid.currentTime = 0;
+  // Update segment buttons
+  fileURLs.forEach((_, i) => {
+    const btn = document.getElementById('wm-seg-' + i);
+    if (btn) btn.style.cssText = i === idx
+      ? 'background:rgba(204,0,0,0.2);border-color:rgba(204,0,0,0.5);color:#ff8080;'
+      : '';
+  });
+  // Update file label
+  const lbl = document.getElementById('wm-file-label');
+  if (lbl) lbl.textContent = `${idx+1}/${fileURLs.length}`;
+}
 
 // ═══════════════════════════════════════
 // TIMESTAMP ROWS
@@ -504,11 +591,12 @@ function insertSlide(afterItemId){
   renderTL();
 }
 function addCurrentTimestamp() {
-  const v = document.getElementById('whole-match-vid');
-  if (!v) return;
-  const secs = Math.floor(v.currentTime);
-  const mm = String(Math.floor(secs / 60)).padStart(2, '0');
-  const ss = String(secs % 60).padStart(2, '0');
+  const vid = document.getElementById('wm-vid');
+  if (!vid) return;
+  // Match time = offset of current file + local time in that file
+  const matchSecs = Math.floor(fileOffsets[wmCurrentFile] + vid.currentTime);
+  const mm = String(Math.floor(matchSecs / 60)).padStart(2, '0');
+  const ss = String(matchSecs % 60).padStart(2, '0');
   const ts = mm + ':' + ss;
   if (items.find(i => i.type === 'clip' && i.ts === ts)) {
     alert(ts + ' is already in the timeline.');
@@ -517,8 +605,7 @@ function addCurrentTimestamp() {
   items.push({ type: 'clip', id: uid(), ts, scorer: '', before: 2, after: 2, overlay: true });
   renderTL();
   checkReady();
-  // Flash confirmation
-  const btn = document.querySelector('#wholematch-panel button');
+  const btn = document.querySelector('#wholematch-panel .btn-sm');
   if (btn) { const orig = btn.textContent; btn.textContent = '✓ Added ' + ts; setTimeout(() => btn.textContent = orig, 1500); }
 }
 
@@ -572,7 +659,9 @@ function resetClip(id) {
   const v = document.getElementById('cv_' + id);
   if (!v) return;
   const s = parseSecs(item.ts);
-  if (s !== null) v.currentTime = Math.max(0, s - item.before);
+  if (s === null) return;
+  const fileInfo = getFileForTime(s);
+  v.currentTime = Math.max(0, fileInfo.localTime - item.before);
   v.pause();
 }
 
@@ -583,13 +672,11 @@ function playClip(id) {
   if (!v) return;
   const s = parseSecs(item.ts);
   if (s === null) return;
-  const clipStart = Math.max(0, s - item.before);
-  const clipEnd   = Math.min(v.duration || Infinity, s + item.after);
+  const fileInfo = getFileForTime(s);
+  const clipStart = Math.max(0, fileInfo.localTime - item.before);
+  const clipEnd   = Math.min(v.duration || Infinity, fileInfo.localTime + item.after);
 
-  // Remove any previous boundary enforcer for this clip
-  if (v._clipEnforcer) { v.removeEventListener('timeupdate', v._clipEnforcer); }
-
-  // Enforce clip boundary on every timeupdate
+  if (v._clipEnforcer) v.removeEventListener('timeupdate', v._clipEnforcer);
   v._clipEnforcer = function() {
     if (v.currentTime > clipEnd) {
       v.pause();
@@ -599,8 +686,6 @@ function playClip(id) {
     }
   };
   v.addEventListener('timeupdate', v._clipEnforcer);
-
-  // Remove enforcer if user manually pauses
   v.addEventListener('pause', function onPause() {
     v.removeEventListener('timeupdate', v._clipEnforcer);
     v._clipEnforcer = null;
@@ -611,7 +696,20 @@ function playClip(id) {
   v.play();
 }
 
-function updateClipSetting(id,field,v){const i=items.find(x=>x.id===id);if(i){i[field]=parseInt(v);if(field==='before'){const s=parseSecs(i.ts);const vid=document.getElementById('cv_'+id);if(vid&&s!==null)vid.currentTime=Math.max(0,s-i.before);}}}
+function updateClipSetting(id,field,v){
+  const i=items.find(x=>x.id===id);
+  if(i){
+    i[field]=parseInt(v);
+    if(field==='before'){
+      const s=parseSecs(i.ts);
+      const vid=document.getElementById('cv_'+id);
+      if(vid&&s!==null){
+        const fi=getFileForTime(s);
+        vid.currentTime=Math.max(0,fi.localTime-i.before);
+      }
+    }
+  }
+}
 function updateOverlay(id,v){const i=items.find(x=>x.id===id);if(i)i.overlay=v;}
 function updateDur(id,v){const i=items.find(x=>x.id===id);if(i)i.duration=parseInt(v);}
 function loadSlideImg(id, inp){
@@ -694,7 +792,10 @@ function insRow(afterItemId){
 
 function makeClipCard(item,num){
   const s=parseSecs(item.ts);
-  const st=s!==null?Math.max(0,s-item.before):0;
+  // Find which file this timestamp falls in
+  const fileInfo = s !== null ? getFileForTime(s) : { url: videoURL, localTime: s || 0 };
+  const localStart = Math.max(0, fileInfo.localTime - item.before);
+  const clipSrc = fileInfo.url || videoURL;
   const d=document.createElement('div');
   d.className='clip-card';d.dataset.id=item.id;
   d.innerHTML=`
@@ -706,9 +807,9 @@ function makeClipCard(item,num){
       <button class="btn-sm btn-del" onclick="removeItem(${item.id})">✕ Remove</button>
     </div>
     <div class="clip-body">
-      ${videoURL
+      ${clipSrc
         ?`<div style="position:relative">
-            <video id="cv_${item.id}" src="${videoURL}" controls preload="metadata"></video>
+            <video id="cv_${item.id}" src="${clipSrc}" controls preload="metadata"></video>
             <div style="display:flex;gap:0.4rem;margin-top:0.35rem;">
               <button class="btn-sm" onclick="resetClip(${item.id})" title="Jump to clip start">⏮ Reset</button>
               <button class="btn-sm" style="background:rgba(204,0,0,0.15);border-color:rgba(204,0,0,0.4);color:#ff8080;" onclick="playClip(${item.id})" title="Play just this clip window">▶ Play clip</button>
@@ -734,7 +835,7 @@ function makeClipCard(item,num){
         </label>
       </div>
     </div>`;
-  if(videoURL){setTimeout(()=>{const v=d.querySelector('#cv_'+item.id);if(v)v.currentTime=st;},80);}
+  if(clipSrc){setTimeout(()=>{const v=d.querySelector('#cv_'+item.id);if(v)v.currentTime=localStart;},80);}
   return d;
 }
 
