@@ -346,10 +346,10 @@ header {
     <div class="tl-head">
       <div>
         <h2>Match Timeline</h2>
-        <p>Drag to reorder · Preview clips · Tag scorers · Insert player slides &amp; audio between goals</p>
+        <p>Drag to reorder · Preview clips · Tag players · Insert player slides &amp; audio between goals</p>
       </div>
-      <button class="sort-btn" onclick="sortByScorer()" title="Group all clips together by goalscorer name, alphabetically">
-        ⇅ Sort by scorer
+      <button class="sort-btn" onclick="sortByScorer()" title="Group all clips together by player name, alphabetically">
+        ⇅ Sort by player
       </button>
     </div>
     <div class="tl-empty" id="tl-empty">
@@ -762,6 +762,8 @@ function sortByScorer(){
   renderTL();
 }
 function updateScorer(id,v){const i=items.find(x=>x.id===id);if(i)i.scorer=v;}
+function updatePlayDesc(id,v){const i=items.find(x=>x.id===id);if(i)i.playDesc=v;}
+function updatePlayDescDur(id,v){const i=items.find(x=>x.id===id);if(i)i.playDescDur=isNaN(v)?2:Math.max(0.5,v);}
 function resetClip(id) {
   const item = items.find(x => x.id === id);
   if (!item) return;
@@ -912,8 +914,21 @@ function makeClipCard(item,num){
       <span class="dhandle" title="Drag to reorder">⣿</span>
       <span class="cbadge">GOAL ${num}</span>
       <span class="cts">${item.ts}</span>
-      <input class="scorer" type="text" placeholder="Goalscorer name…" value="${esc(item.scorer)}" oninput="updateScorer(${item.id},this.value)">
+      <input class="scorer" type="text" placeholder="Player name…" value="${esc(item.scorer)}" oninput="updateScorer(${item.id},this.value)">
       <button class="btn-sm btn-del" onclick="removeItem(${item.id})">✕ Remove</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.6rem;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.05);">
+      <input type="text" placeholder="Overlay play description (e.g. GOAL!, SCREAMER!, FREE KICK)…" value="${esc(item.playDesc||'')}"
+        oninput="updatePlayDesc(${item.id},this.value)"
+        style="flex:1;background:none;border:none;border-bottom:1px solid rgba(255,255,255,0.1);color:#f5f5f5;font-family:'Roboto',sans-serif;font-size:0.8rem;outline:none;padding:0.18rem 0.28rem;">
+      <label style="font-size:0.7rem;color:#888;white-space:nowrap;flex-shrink:0;">Show for
+        <input type="number" min="1" max="10" step="0.5" value="${item.playDescDur||2}"
+          oninput="updatePlayDescDur(${item.id},parseFloat(this.value))"
+          style="width:3rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:#f5f5f5;font-size:0.75rem;padding:0.15rem 0.3rem;text-align:center;">s
+      </label>
+    </div>
+    <div class="clip-head" style="border-top:none;padding-top:0">
+      <span style="width:1.5rem"></span><!-- spacer --
     </div>
     <div class="clip-body">
       ${clipSrc
@@ -940,7 +955,7 @@ function makeClipCard(item,num){
         </div>
         <label class="overlay-toggle">
           <input type="checkbox" ${item.overlay?'checked':''} onchange="updateOverlay(${item.id},this.checked)">
-          🔴 Overlay Ringwood Town badge &amp; goalscorer name on this clip
+          🔴 Overlay Ringwood Town badge &amp; player name on this clip
         </label>
       </div>
     </div>`;
@@ -1882,6 +1897,7 @@ async function processAll() {
 
           const BADGE_SIZE = 110;
           const BADGE_PAD  = 14;
+          const clipStartTime = performance.now(); // for fade-out timing
 
           const drawFrame = () => {
             if (done) return;
@@ -1916,6 +1932,40 @@ async function processAll() {
                 ctx.shadowBlur = 4;
                 ctx.fillText(scorerText, BADGE_SIZE + BADGE_PAD * 2 + 8, BADGE_PAD + 8 + BADGE_SIZE * 0.62);
                 ctx.shadowBlur = 0;
+              }
+            }
+
+            // Play description overlay — large centred text that fades out
+            const playDesc = (item.playDesc || '').trim();
+            if (playDesc) {
+              const elapsed  = (performance.now() - clipStartTime) / 1000; // seconds since clip start
+              const showDur  = item.playDescDur || 2;
+              const fadeStart = showDur * 0.5; // start fading at 50% of duration
+              if (elapsed < showDur) {
+                const alpha = elapsed > fadeStart
+                  ? 1 - (elapsed - fadeStart) / (showDur - fadeStart)
+                  : 1;
+
+                // Dark semi-transparent bar behind text
+                const fontSize = Math.round(H * 0.09); // ~9% of height = big
+                ctx.font = `900 ${fontSize}px Arial`;
+                const tw = ctx.measureText(playDesc).width;
+                const tx = (W - tw) / 2;
+                const ty = H / 2 + fontSize * 0.35;
+                const pad = 24;
+
+                ctx.globalAlpha = alpha * 0.55;
+                ctx.fillStyle = '#000';
+                ctx.fillRect(tx - pad, ty - fontSize - pad * 0.5, tw + pad * 2, fontSize + pad);
+                ctx.globalAlpha = alpha;
+
+                // White text with red shadow for impact
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = '#cc0000';
+                ctx.shadowBlur = 18;
+                ctx.fillText(playDesc, tx, ty);
+                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 1;
               }
             }
           };
