@@ -616,12 +616,20 @@ function loadVideo(f) { loadVideos([f]); } // backwards compat
 // ═══════════════════════════════════════
 // IN-BROWSER TRANSCODER (WebCodecs + mp4-muxer)
 // ═══════════════════════════════════════
-// Target: 720p max, 2fps, H.264 ~500kbps → well under 95MB for 90min quarter
-const TRANSCODE_FPS       = 2;       // Gemini only samples 1fps anyway; 2 gives cleaner frames
+// Target: 720p, 10fps, auto-scaled bitrate to stay under 90MB regardless of file length
+const TRANSCODE_FPS       = 10;      // 10fps — smooth enough to watch, Gemini samples 1fps anyway
 const TRANSCODE_MAX_W     = 1280;
 const TRANSCODE_MAX_H     = 720;
-const TRANSCODE_BITRATE   = 500_000; // 500kbps — plenty for analysis
-const TRANSCODE_MAX_BYTES = 90 * 1024 * 1024; // 90MB target
+const TRANSCODE_MAX_BYTES = 90 * 1024 * 1024; // 90MB hard target
+
+function calcBitrate(durationSecs) {
+  // Max bitrate that keeps output under 90MB for this duration
+  // file_size_bytes = bitrate_bps * duration_s / 8
+  // → bitrate_bps = (90MB * 8) / duration_s
+  const maxBps = (TRANSCODE_MAX_BYTES * 8) / durationSecs;
+  // Clamp: min 150kbps (quality floor), max 500kbps (no point going higher at 720p/10fps)
+  return Math.round(Math.min(500_000, Math.max(150_000, maxBps)));
+}
 
 function tLog(msg) {
   const el = document.getElementById('transcode-log');
@@ -655,13 +663,15 @@ async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, ove
   const outW = Math.floor(origW * scale / 2) * 2;
   const outH = Math.floor(origH * scale / 2) * 2;
   const totalFrames = Math.ceil(duration * TRANSCODE_FPS);
+  const bitrate = calcBitrate(duration);
 
-  tLog(`  📐 ${origW}×${origH} → ${outW}×${outH}, ${duration.toFixed(0)}s, ~${totalFrames} frames @ ${TRANSCODE_FPS}fps`);
+  tLog(`  📐 ${origW}×${origH} → ${outW}×${outH}, ${duration.toFixed(0)}s, ~${totalFrames} frames @ ${TRANSCODE_FPS}fps, ${Math.round(bitrate/1000)}kbps`);
+  tLog(`  📦 Estimated output: ~${fmtBytes(bitrate * duration / 8)}`);
 
   // Check H.264 encoder support, fall back to VP9 if needed
-  const avcConfig = { codec:'avc1.42E01F', width:outW, height:outH, bitrate:TRANSCODE_BITRATE,
+  const avcConfig = { codec:'avc1.42E01F', width:outW, height:outH, bitrate,
                       framerate:TRANSCODE_FPS, avc:{ format:'avc' } };
-  const vp9Config = { codec:'vp09.00.10.08', width:outW, height:outH, bitrate:TRANSCODE_BITRATE,
+  const vp9Config = { codec:'vp09.00.10.08', width:outW, height:outH, bitrate,
                       framerate:TRANSCODE_FPS };
   let encConfig, muxCodec;
   const avcSupport = await VideoEncoder.isConfigSupported(avcConfig);
@@ -862,13 +872,14 @@ async function stitchAndDownload(files, triggerBtn) {
   try {
     const { Muxer, ArrayBufferTarget } = Mp4Muxer;
 
-    // Read first file to get dimensions
+    // Read first file to get dimensions and calculate total duration across all files
     const firstURL = URL.createObjectURL(files[0]);
     const { width, height } = await new Promise((res, rej) => {
       const v = document.createElement('video');
       v.src = firstURL; v.onloadedmetadata = () => res({ width: v.videoWidth, height: v.videoHeight }); v.onerror = rej;
     });
     URL.revokeObjectURL(firstURL);
+    const totalDur = await Promise.all(files.map(f => getVideoDuration(f))).then(ds => ds.reduce((a,b)=>a+b,0));
 
     const target = new ArrayBufferTarget();
     const muxer = new Muxer({
@@ -878,7 +889,7 @@ async function stitchAndDownload(files, triggerBtn) {
     });
 
     // Check encoder support
-    const encConfig = { codec:'avc1.42E01F', width, height, bitrate: TRANSCODE_BITRATE, framerate: TRANSCODE_FPS, avc:{ format:'avc' } };
+    const encConfig = { codec:'avc1.42E01F', width, height, bitrate: calcBitrate(totalDur), framerate: TRANSCODE_FPS, avc:{ format:'avc' } };
     const { supported } = await VideoEncoder.isConfigSupported(encConfig);
     if (!supported) throw new Error('H.264 encoding not supported — download individual files instead.');
 
