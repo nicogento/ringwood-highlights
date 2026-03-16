@@ -307,8 +307,8 @@ header {
     </div>
 
     <div class="panel" id="gemini-panel">
-      <div class="ptitle">Step 1.5 — Auto-Detect Plays with Gemini AI</div>
-      <div class="psub">Gemini watches your match video and finds the plays you select. Timestamps are added straight to your timeline.</div>
+      <div class="ptitle">Step 1.5 — Auto-Detect Goals with Gemini AI</div>
+      <div class="psub">Gemini watches your match video and finds every goal automatically. Timestamps are added straight to your timeline.</div>
 
       <div class="gemini-setup" id="gemini-key-setup" style="display:none">
         <div class="gemini-setup-title">🔑 One-time setup — your free Google AI key</div>
@@ -328,86 +328,9 @@ header {
         <div class="key-status" id="key-status"></div>
       </div>
 
-      <!-- PHASE 1: Analyse teams -->
-      <button class="gemini-btn" id="gemini-analyse-btn" onclick="runTeamAnalysis()" disabled style="margin-bottom:0.5rem;">
-        <span>🔍</span> Step A — Analyse Teams &amp; Kit Colours
+      <button class="gemini-btn" id="gemini-btn" onclick="runGeminiDetection()" disabled>
+        <span>⚽</span> Detect Goals Automatically
       </button>
-
-      <!-- PHASE 2: Options (shown after team analysis) -->
-      <div id="gemini-options" style="display:none;margin-bottom:0.75rem;">
-        <div style="font-size:0.72rem;color:#aaa;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:rgba(66,133,244,0.08);border:1px solid rgba(66,133,244,0.2);border-radius:6px;">
-          ✓ Teams identified — select which plays to find and which team for each
-        </div>
-
-        <div style="font-size:0.72rem;color:#888;margin-bottom:0.5rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Play types &amp; team filter</div>
-
-        <!-- Reusable team pill style via inline -->
-        <div style="display:flex;flex-direction:column;gap:0.6rem;margin-bottom:0.85rem;">
-
-          <!-- Goals -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
-            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;">
-              <input type="checkbox" id="play-goals" checked> ⚽ <strong>Goals</strong>
-            </label>
-            <div id="team-goals" style="display:flex;gap:0.4rem;flex-wrap:wrap;padding-left:1.4rem;font-size:0.72rem;">
-              <label style="cursor:pointer;"><input type="radio" name="team-goals" value="both" checked> Both</label>
-              <label style="cursor:pointer;" id="team-goals-A-lbl"><input type="radio" name="team-goals" value="teamA"> <span id="team-goals-A">Team A</span></label>
-              <label style="cursor:pointer;" id="team-goals-B-lbl"><input type="radio" name="team-goals" value="teamB"> <span id="team-goals-B">Team B</span></label>
-            </div>
-          </div>
-
-          <!-- Saves -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
-            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;">
-              <input type="checkbox" id="play-saves"> 🧤 <strong>Goalkeeper saves</strong>
-              <span style="font-size:0.68rem;color:#555;">(both GKs always shown)</span>
-            </label>
-          </div>
-
-          <!-- Dribbles -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
-            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;flex-wrap:wrap;">
-              <input type="checkbox" id="play-dribbles"> 🏃 <strong>Dribbles</strong>
-              <span style="font-size:0.7rem;color:#888;">ball carried &gt;
-                <input type="number" id="play-dribble-secs" value="2" min="1" max="10" style="width:2.5rem;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f5f5f5;font-size:0.7rem;padding:0.1rem 0.25rem;text-align:center;">s
-              </span>
-            </label>
-            <div id="team-dribbles" style="display:flex;gap:0.4rem;flex-wrap:wrap;padding-left:1.4rem;font-size:0.72rem;">
-              <label style="cursor:pointer;"><input type="radio" name="team-dribbles" value="both" checked> Both</label>
-              <label style="cursor:pointer;"><input type="radio" name="team-dribbles" value="teamA"> <span class="team-A-label">Team A</span></label>
-              <label style="cursor:pointer;"><input type="radio" name="team-dribbles" value="teamB"> <span class="team-B-label">Team B</span></label>
-            </div>
-          </div>
-
-          <!-- Passing -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:0.5rem 0.65rem;">
-            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;margin-bottom:0.35rem;flex-wrap:wrap;">
-              <input type="checkbox" id="play-passing"> 🔗 <strong>Passing sequences</strong>
-              <span style="font-size:0.7rem;color:#888;">&gt;
-                <input type="number" id="play-pass-count" value="2" min="2" max="10" style="width:2.5rem;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#f5f5f5;font-size:0.7rem;padding:0.1rem 0.25rem;text-align:center;"> passes
-              </span>
-            </label>
-            <div id="team-passing" style="display:flex;gap:0.4rem;flex-wrap:wrap;padding-left:1.4rem;font-size:0.72rem;">
-              <label style="cursor:pointer;"><input type="radio" name="team-passing" value="both" checked> Both</label>
-              <label style="cursor:pointer;"><input type="radio" name="team-passing" value="teamA"> <span class="team-A-label">Team A</span></label>
-              <label style="cursor:pointer;"><input type="radio" name="team-passing" value="teamB"> <span class="team-B-label">Team B</span></label>
-            </div>
-          </div>
-
-        </div>
-
-        <button class="gemini-btn" id="gemini-btn" onclick="runGeminiDetection()" style="margin-bottom:0;">
-          <span>🤖</span> Step B — Find Selected Plays
-        </button>
-      </div>
-
-      <!-- Show detect button immediately too (goals only, no team filter) -->
-      <div id="gemini-quick" style="margin-bottom:0;">
-        <button class="gemini-btn" id="gemini-quick-btn" onclick="runGeminiDetection()" disabled style="background:linear-gradient(135deg,#555,#444);margin-bottom:0.3rem;">
-          <span>⚡</span> Quick Detect Goals Only
-        </button>
-        <div style="font-size:0.68rem;color:#555;text-align:center;">Skip team analysis — finds goals only, both teams</div>
-      </div>
 
       <div class="gemini-prog" id="gemini-prog">
         <div class="gemini-prog-bar"><div class="gemini-prog-fill" id="gemini-prog-fill"></div></div>
@@ -2086,113 +2009,11 @@ async function testFilePrompt() {
 
 function checkGeminiReady() {
   const hasVideoAndKey = !!(geminiKey && geminiKey.length > 10 && (videoFiles.length > 0 || videoFile));
-  // Main detect button (inside options panel)
   const btn = document.getElementById('gemini-btn');
   if (btn) btn.disabled = !hasVideoAndKey;
-  // Analyse teams button
-  const analyseBtn = document.getElementById('gemini-analyse-btn');
-  if (analyseBtn) analyseBtn.disabled = !hasVideoAndKey;
-  // Quick detect button
-  const quickBtn = document.getElementById('gemini-quick-btn');
-  if (quickBtn) quickBtn.disabled = !hasVideoAndKey;
 }
 
-// Team analysis state
-let teamColours = null; // { teamA: 'red and white', teamB: 'blue and black' }
-
-async function runTeamAnalysis() {
-  if (!videoFile || !geminiKey) return;
-  const analyseBtn = document.getElementById('gemini-analyse-btn');
-  analyseBtn.disabled = true;
-
-  const prog = document.getElementById('gemini-prog');
-  prog.style.display = 'block';
-  document.getElementById('gemini-log').innerHTML = '';
-  document.getElementById('gemini-found').style.display = 'none';
-  gSetP(0);
-
-  try {
-    const filesToProcess = videoFiles.length > 0 ? videoFiles : [videoFile];
-    const f = filesToProcess[0]; // analyse first file for team colours
-    gLog('🔍 Analysing team kit colours (first 5 minutes only)…');
-
-    if (f.size > 95 * 1024 * 1024) { gLog('❌ File too large — run Step 1b compression first'); analyseBtn.disabled = false; return; }
-
-    _bestModel = await getBestModel();
-    gLog('📤 Uploading first 5 minutes for analysis…');
-    gSetP(20);
-    const fileUri = await uploadToGeminiFiles(f, f.type || 'video/mp4', 1, 1);
-    const fileUriFixed = fileUri.replace('/v1beta/files/', '/files/');
-    gLog('✓ Uploaded. Asking Gemini to identify both teams…');
-    gSetP(60);
-
-    const prompt = `You are watching the first few minutes of a football (soccer) match.
-
-There are EXACTLY TWO teams playing. Both teams are on the pitch at the same time wearing DIFFERENT coloured kits. Your job is to identify BOTH of them.
-
-IMPORTANT: Do not stop after identifying one team. You must identify BOTH Team A and Team B. Look carefully at all players on the pitch — one set of players will be wearing one colour kit, and the opposing set of players will be wearing a completely different colour kit.
-
-Reply with ONLY this exact format (two lines, nothing else):
-Team A: [describe outfield kit colours precisely, e.g. "red shirts, white shorts, red socks"]
-Team B: [describe outfield kit colours precisely, e.g. "blue and black striped shirts, black shorts"]
-
-Rules:
-- Describe the OUTFIELD players only (not the goalkeeper who wears different colours)
-- Both lines are required — do not leave either blank
-- If you can only clearly see one team, make your best guess for the second based on what you can observe
-- Be specific: include shirt colour, shorts colour, and any patterns or stripes`;
-
-    const res = await fetch(gUrl(`/v1beta/models/${_bestModel || 'gemini-2.5-pro'}:generateContent?key=${geminiKey}`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [
-          {
-            fileData: { mimeType: f.type || 'video/mp4', fileUri: fileUriFixed },
-            videoMetadata: { endOffset: '300s' }   // first 5 minutes only
-          },
-          { text: prompt }
-        ]}],
-        generationConfig: { maxOutputTokens: 200 }
-      })
-    });
-
-    await deleteGeminiFile(fileUri).catch(() => {});
-
-    if (!res.ok) { const e = await res.text(); gLog('❌ Analysis failed: ' + e.slice(0,200)); analyseBtn.disabled = false; return; }
-    const data = await res.json();
-    const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-    gLog('📋 Gemini response: ' + text);
-
-    // Parse response
-    const lineA = text.match(/Team A:\s*(.+)/i);
-    const lineB = text.match(/Team B:\s*(.+)/i);
-    const colA = lineA ? lineA[1].trim() : 'Team A';
-    const colB = lineB ? lineB[1].trim() : 'Team B';
-    teamColours = { teamA: colA, teamB: colB };
-
-    gLog(`✓ Team A: ${colA}`);
-    gLog(`✓ Team B: ${colB}`);
-    gSetP(100);
-
-    // Populate team labels in each per-play-type section
-    const shortA = colA.length > 30 ? colA.slice(0,28)+'…' : colA;
-    const shortB = colB.length > 30 ? colB.slice(0,28)+'…' : colB;
-    document.querySelectorAll('.team-A-label').forEach(el => el.textContent = 'Team A: ' + shortA);
-    document.querySelectorAll('.team-B-label').forEach(el => el.textContent = 'Team B: ' + shortB);
-    const gA = document.getElementById('team-goals-A'); if(gA) gA.textContent = 'Team A: ' + shortA;
-    const gB = document.getElementById('team-goals-B'); if(gB) gB.textContent = 'Team B: ' + shortB;
-
-    document.getElementById('gemini-options').style.display = 'block';
-    document.getElementById('gemini-quick').style.display = 'none';
-    gLog('✓ Select your play types and team filter for each, then click Step B.');
-
-  } catch(e) {
-    gLog('❌ ' + e.message);
-  }
-  analyseBtn.disabled = false;
-}
-// Re-check after key decrypts (async) — poll until key is ready
+// Re-check after key decrypts// Re-check after key decrypts (async) — poll until key is ready
 (function waitForKey() {
   if (geminiKey && geminiKey.length > 10) { checkGeminiReady(); return; }
   setTimeout(waitForKey, 200);
@@ -2299,7 +2120,7 @@ async function runGeminiDetection() {
 
       let rawTimestamps;
       try {
-        const playConfig = { wantGoals, wantSaves, wantDribbles, wantPassing, dribbleSecs, passCount, teamDescGoals, teamDescDribbles, teamDescPassing };
+        const playConfig = { wantGoals: true, wantSaves: false, wantDribbles: false, wantPassing: false, dribbleSecs: 2, passCount: 2, teamDescGoals: null, teamDescDribbles: null, teamDescPassing: null };
         rawTimestamps = await askGeminiForGoals(fileUri, timeOffsetS, fi + 1, filesToProcess.length, f.type || 'video/mp4', playConfig);
       } catch(e) {
         gLog(`  ⚠ Analysis failed: ${e.message}`);
@@ -2362,8 +2183,7 @@ async function runGeminiDetection() {
     console.error(err);
   }
 
-  btn.disabled = false;
-  if (quickBtn) quickBtn.disabled = false;
+  if (btn) btn.disabled = false;
 }
 
 async function getVideoDuration(file) {
@@ -2420,7 +2240,7 @@ async function waitForFileActive(fileUri) {
 async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mimeType, playConfig) {
   mimeType = mimeType || 'video/mp4';
   const fileUriFixed = fileUri.replace('/v1beta/files/', '/files/');
-  const cfg = playConfig || { wantGoals: true, wantSaves: false, wantDribbles: false, wantPassing: false, dribbleSecs: 2, passCount: 2, teamDescGoals: null, teamDescDribbles: null, teamDescPassing: null };
+  const cfg = playConfig || { wantGoals: true, teamDescGoals: null };
 
   const offsetNote = timeOffsetS > 0
     ? `IMPORTANT: This video segment starts at ${fmtTime(timeOffsetS)} in the full match. All timestamps you return must be offset by ${fmtTime(timeOffsetS)} — i.e. if you see a play at 1:30 in this clip, return ${fmtTime(timeOffsetS + 90)}.`
@@ -2451,6 +2271,30 @@ async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mi
     return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
   };
 
+  // Goals-specific call at 5fps for better ball-in-net detection
+  const callGeminiGoals = async (prompt) => {
+    const res = await fetch(
+      gUrl(`/v1beta/models/${_bestModel || 'gemini-2.5-pro'}:generateContent?key=${geminiKey}`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [
+            { fileData: { mimeType, fileUri: fileUriFixed }, videoMetadata: { fps: 5 } },
+            { text: prompt }
+          ]}],
+          generationConfig: { maxOutputTokens: 1024 }
+        })
+      }
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      gLog(`  🔍 Full error: ${err}`);
+      throw new Error(`Gemini API error (${res.status}): ${err.slice(0,600)}`);
+    }
+    return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+  };
+
   const results = [];
 
   // ── GOALS: dedicated separate call with maximally permissive prompt ──────
@@ -2459,64 +2303,40 @@ async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mi
     const goalsPrompt = `You are watching a football match video.${teamNote}
 ${offsetNote}
 
-YOUR ONLY JOB: find every possible moment a goal may have been scored. 
+YOUR ONLY JOB: find every possible moment a goal may have been scored.
 
 YOU MUST BE EXTREMELY GENEROUS. Return EVERY timestamp where there is ANY chance of a goal. You will not be penalised for false positives — only for missing real goals.
 
-Flag IMMEDIATELY if you notice ANY of these — even if you are not certain:
-- The ball going near or towards the goal
-- The net moving, rippling or bulging at all
+AUDIO IS YOUR PRIMARY SIGNAL — listen carefully throughout the entire video:
+- A sudden surge in crowd noise or volume spike — this is the strongest goal indicator
+- The crowd erupting, cheering, or sustained roaring after a quiet period
+- Commentary voice rising sharply in pitch or excitement
+- A commentator shouting or elongating a word (even if you cannot make out the words)
+- Any loud collective reaction from spectators
+- A whistle blast followed by silence then crowd noise building
+- The general atmosphere suddenly changing from tense/quiet to loud/euphoric
+
+VISUAL signals to also watch for (secondary to audio — video is sampled at 5fps so ball movement is visible):
+- The ball entering the goal or crossing the goal line
+- The net moving, rippling, bulging or swinging after an impact
+- The ball visible inside or behind the net
 - Any player raising arms, running or celebrating
-- Any change in crowd noise or energy
-- A whistle or stoppage near the goal area
-- Players gathering near the goal
+- Players from either team gathering or reacting
 - A kick-off from the centre circle
 - The referee pointing anywhere
 - Any moment that feels like a reaction to something
 
-RESPONSE: Return ONLY a comma-separated list of MM:SS timestamps, e.g.: 00:53, 01:22, 02:45
-If truly nothing happens near the goal at all, reply: NO GOALS`;
+CRITICAL: If the audio spikes or the crowd reacts at ANY point — flag it immediately, even if the visual is unclear or the ball is not visible. The audio reaction IS the goal signal. A compressed video at low frame rate may not show the ball clearly but the audio crowd reaction will always be there.
 
-    gLog(`  ⚽ Running dedicated goal detection…`);
-    const text = await withRetry(() => callGemini(goalsPrompt), 'goal detection');
+RESPONSE: Return ONLY a comma-separated list of MM:SS timestamps, e.g.: 00:53, 01:22, 02:45
+If truly nothing happens and there is no crowd reaction at all, reply: NO GOALS`;
+
+    gLog(`  ⚽ Running dedicated goal detection (5fps, audio-primary)…`);
+    const text = await withRetry(() => callGeminiGoals(goalsPrompt), 'goal detection');
     gLog(`  📝 Goals response: ${text.slice(0, 150)}`);
     if (text && !text.toUpperCase().includes('NO GOALS')) {
       const matches = text.match(/\d{1,2}:\d{2}/g) || [];
       matches.forEach(ts => results.push({ ts, label: 'GOAL' }));
-    }
-  }
-
-  // ── OTHER PLAY TYPES: single combined call ───────────────────────────────
-  const otherTypes = [];
-  if (cfg.wantSaves) otherTypes.push(`GOALKEEPER SAVES (both teams — no team filter): The goalkeeper stands in front of the white goal net facing outfield. A save is when the goalkeeper stops a shot from entering the net by catching, diving, punching or deflecting it. Ball must NOT enter the net. Label: SAVE`);
-  if (cfg.wantDribbles) otherTypes.push(`DRIBBLES${teamFilter(cfg.teamDescDribbles) ? ' (' + teamFilter(cfg.teamDescDribbles).trim() + ')' : ''}: The SAME player repeatedly touches the ball (at least 3 touches) while running with it for more than ${cfg.dribbleSecs} seconds. Must be repeated individual touches by one player — not a rolled ball or a pass. Label: DRIBBLE`);
-  if (cfg.wantPassing) otherTypes.push(`PASSING SEQUENCES${teamFilter(cfg.teamDescPassing) ? ' (' + teamFilter(cfg.teamDescPassing).trim() + ')' : ''}: ${cfg.passCount} or more consecutive passes between players wearing the same kit colours. Label: PASS`);
-
-  if (otherTypes.length > 0) {
-    const otherPrompt = `You are watching a football match video.
-${offsetNote}
-
-Find every occurrence of these play types:
-
-${otherTypes.map((p, i) => `${i+1}. ${p}`).join('\n\n')}
-
-RESPONSE FORMAT — one line per play, nothing else:
-MM:SS LABEL
-e.g.:
-01:22 DRIBBLE
-02:45 PASS
-03:10 SAVE
-
-If none found, reply: NO PLAYS`;
-
-    gLog(`  🎬 Running other play type detection…`);
-    const text2 = await withRetry(() => callGemini(otherPrompt), 'play detection');
-    gLog(`  📝 Other plays response: ${text2.slice(0, 150)}`);
-    if (text2 && !text2.toUpperCase().includes('NO PLAYS')) {
-      text2.split('\n').forEach(line => {
-        const m = line.match(/(\d{1,2}:\d{2})\s*(\w+)?/);
-        if (m) results.push({ ts: m[1], label: (m[2] || 'PLAY').toUpperCase() });
-      });
     }
   }
 
@@ -3143,6 +2963,6 @@ renderTsPanel(); // initialise Step 2 panel
   img.onload = () => { img.style.display = 'block'; };
 })();
 </script>
-<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-16 22:55 UTC</div>
+<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-16 23:28 UTC</div>
 </body>
 </html>
