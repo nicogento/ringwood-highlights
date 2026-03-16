@@ -2147,11 +2147,10 @@ Rules:
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [
-          { fileData: {
-              mimeType: f.type || 'video/mp4',
-              fileUri: fileUriFixed,
-              videoMetadata: { endOffset: '300s' }   // first 5 minutes only
-          }},
+          {
+            fileData: { mimeType: f.type || 'video/mp4', fileUri: fileUriFixed },
+            videoMetadata: { endOffset: '300s' }   // first 5 minutes only
+          },
           { text: prompt }
         ]}],
         generationConfig: { maxOutputTokens: 200 }
