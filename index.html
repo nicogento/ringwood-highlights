@@ -805,10 +805,7 @@ async function runTranscode() {
     tSetP(100);
     tLog(`\n✅ All done! Reloading player with compressed files…`);
 
-    // Replace videoFiles with compressed versions and reload player
-    // Temporarily hide transcode panel — loadVideos will re-evaluate
-    await loadVideos(outFiles);
-
+    // Build download buttons FIRST before loadVideos potentially hides the panel
     const doneEl = document.getElementById('transcode-done');
     const origTotal = allFiles.reduce((s,f)=>s+f.size,0);
     const newTotal  = outFiles.reduce((s,f)=>s+f.size,0);
@@ -816,25 +813,21 @@ async function runTranscode() {
       `(saved ${fmtBytes(origTotal-newTotal)}). Videos ready for Gemini.`;
     doneEl.style.display = 'block';
 
-    // Build download buttons
     const dlArea = document.getElementById('transcode-downloads');
     dlArea.innerHTML = '';
-    dlArea.style.display = 'flex';
 
-    // Individual file download buttons
-    outFiles.forEach((f, i) => {
+    outFiles.forEach((f) => {
       const url = URL.createObjectURL(f);
-      const btn = document.createElement('a');
-      btn.href = url;
-      btn.download = f.name;
-      btn.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#f5f5f5;text-decoration:none;font-size:0.75rem;cursor:pointer;transition:background 0.15s;';
-      btn.onmouseover = () => btn.style.background = 'rgba(255,255,255,0.09)';
-      btn.onmouseout  = () => btn.style.background = 'rgba(255,255,255,0.05)';
-      btn.innerHTML = `<span style="color:#f57c00;">⬇</span> <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</span><span style="color:#888;flex-shrink:0;">${fmtBytes(f.size)}</span>`;
-      dlArea.appendChild(btn);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name;
+      a.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#f5f5f5;text-decoration:none;font-size:0.75rem;cursor:pointer;transition:background 0.15s;';
+      a.onmouseover = () => a.style.background = 'rgba(255,255,255,0.09)';
+      a.onmouseout  = () => a.style.background = 'rgba(255,255,255,0.05)';
+      a.innerHTML = `<span style="color:#f57c00;">⬇</span> <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</span><span style="color:#888;flex-shrink:0;">${fmtBytes(f.size)}</span>`;
+      dlArea.appendChild(a);
     });
 
-    // Stitch + download button when multiple files
     if (outFiles.length > 1) {
       const stitchBtn = document.createElement('button');
       stitchBtn.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;background:rgba(66,133,244,0.1);border:1px solid rgba(66,133,244,0.25);border-radius:6px;color:#7aabf0;font-size:0.75rem;cursor:pointer;width:100%;transition:background 0.15s;';
@@ -844,6 +837,16 @@ async function runTranscode() {
       stitchBtn.onclick = () => stitchAndDownload(outFiles, stitchBtn);
       dlArea.appendChild(stitchBtn);
     }
+
+    // Now reload the player with compressed files
+    // loadVideos may hide the transcode panel if files are now under limit — re-show it after
+    await loadVideos(outFiles);
+
+    // Re-show panel with done state and downloads (loadVideos hides it when files are under limit)
+    const tp = document.getElementById('transcode-panel');
+    tp.style.display = 'block';
+    doneEl.style.display = 'block';
+    dlArea.style.display = 'flex';
 
   } catch(e) {
     tLog(`\n❌ Error: ${e.message}`);
