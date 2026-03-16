@@ -303,7 +303,7 @@ header {
         <div id="transcode-log" style="font-size:0.72rem;color:#888;max-height:8rem;overflow-y:auto;font-family:monospace;"></div>
       </div>
       <div id="transcode-done" style="display:none;background:rgba(52,168,83,0.08);border:1px solid rgba(52,168,83,0.25);border-radius:6px;padding:0.55rem 0.75rem;margin-top:0.6rem;font-size:0.73rem;color:#70c870;"></div>
-      <div id="transcode-downloads" style="display:none;margin-top:0.6rem;display:none;flex-direction:column;gap:0.35rem;"></div>
+      <div id="transcode-downloads" style="display:none;margin-top:0.6rem;flex-direction:column;gap:0.35rem;"></div>
     </div>
 
     <div class="panel" id="gemini-panel">
@@ -573,6 +573,7 @@ async function loadVideos(files) {
     // Reset transcode state
     document.getElementById('transcode-prog').style.display = 'none';
     document.getElementById('transcode-done').style.display = 'none';
+    document.getElementById('transcode-downloads').style.display = 'none';
     document.getElementById('transcode-log').innerHTML = '';
     document.getElementById('transcode-prog-fill').style.width = '0%';
     document.getElementById('transcode-btn').disabled = false;
@@ -770,6 +771,7 @@ async function runTranscode() {
   btn.disabled = true;
   document.getElementById('transcode-prog').style.display = 'block';
   document.getElementById('transcode-done').style.display = 'none';
+  document.getElementById('transcode-downloads').style.display = 'none';
   document.getElementById('transcode-log').innerHTML = '';
   tSetP(0);
 
