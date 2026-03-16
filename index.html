@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ringwood Town FC — Goal Highlights Studio</title>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@latest/build/mp4-muxer.js"></script>
 
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Anton&family=Roboto+Condensed:wght@300;400;700&family=Roboto:wght@300;400;500;700&display=swap');
@@ -287,6 +288,22 @@ header {
       <div id="vid-badge" style="display:none;margin-top:0.5rem;"></div>
     </div>
 
+    <!-- Step 1b: Transcode panel (shown when files exceed 95MB) -->
+    <div class="panel" id="transcode-panel" style="display:none;">
+      <div class="ptitle">Step 1b — Compress for Gemini</div>
+      <div class="psub">Your video files are too large for Gemini's 95MB limit. Click below to compress them in your browser — no upload needed, runs entirely locally.</div>
+      <div id="transcode-info" style="font-size:0.75rem;color:#888;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.07);"></div>
+      <button class="gemini-btn" id="transcode-btn" onclick="runTranscode()" style="background:linear-gradient(135deg,#f57c00,#e65100);margin-bottom:0.5rem;">
+        <span>⚡</span> Compress Videos for Gemini
+      </button>
+      <div id="transcode-prog" style="display:none;margin-top:0.75rem;">
+        <div style="background:rgba(255,255,255,0.06);border-radius:99px;height:5px;margin-bottom:0.5rem;">
+          <div id="transcode-prog-fill" style="height:100%;background:linear-gradient(90deg,#f57c00,#e65100);border-radius:99px;width:0%;transition:width 0.3s;"></div>
+        </div>
+        <div id="transcode-log" style="font-size:0.72rem;color:#888;max-height:8rem;overflow-y:auto;font-family:monospace;"></div>
+      </div>
+      <div id="transcode-done" style="display:none;background:rgba(52,168,83,0.08);border:1px solid rgba(52,168,83,0.25);border-radius:6px;padding:0.55rem 0.75rem;margin-top:0.6rem;font-size:0.73rem;color:#70c870;"></div>
+    </div>
 
     <div class="panel" id="gemini-panel">
       <div class="ptitle">Step 1.5 — Auto-Detect Plays with Gemini AI</div>
@@ -534,14 +551,33 @@ vdz.addEventListener('drop', e => {
 
 async function loadVideos(files) {
   const MAX = 95 * 1024 * 1024;
-  const oversized = files.filter(f => f.size > MAX);
-  if (oversized.length > 0) {
-    const names = oversized.map(f => `• ${f.name} (${fmtBytes(f.size)})`).join('\n');
-    alert(`The following file${oversized.length > 1 ? 's are' : ' is'} over the 95MB limit and cannot be uploaded:\n\n${names}\n\nPlease trim or compress the video${oversized.length > 1 ? 's' : ''} and try again.`);
-    files = files.filter(f => f.size <= MAX);
-    if (files.length === 0) return;
-  }
   files.sort((a, b) => a.name.localeCompare(b.name));
+  const oversized = files.filter(f => f.size > MAX);
+
+  // Show/hide transcode panel
+  const tp = document.getElementById('transcode-panel');
+  if (oversized.length > 0) {
+    const totalOrig = files.reduce((s,f)=>s+f.size,0);
+    const infoEl = document.getElementById('transcode-info');
+    infoEl.innerHTML = files.map(f =>
+      `<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.15rem 0;">
+        <span style="color:${f.size>MAX?'#f57c00':'#70c870'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.size>MAX?'⚠':'✓'} ${f.name}</span>
+        <span style="flex-shrink:0;color:#888;">${fmtBytes(f.size)}${f.size>MAX?' — needs compress':''}</span>
+      </div>`
+    ).join('') +
+    `<div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid rgba(255,255,255,0.06);color:#888;">
+      Total: ${fmtBytes(totalOrig)} → estimated ~${fmtBytes(files.length * 60*1024*1024)} after compression
+    </div>`;
+    tp.style.display = 'block';
+    // Reset transcode state
+    document.getElementById('transcode-prog').style.display = 'none';
+    document.getElementById('transcode-done').style.display = 'none';
+    document.getElementById('transcode-log').innerHTML = '';
+    document.getElementById('transcode-prog-fill').style.width = '0%';
+    document.getElementById('transcode-btn').disabled = false;
+  } else {
+    tp.style.display = 'none';
+  }
   videoFiles = files;
   videoFile = files[0];
 
@@ -574,6 +610,215 @@ async function loadVideos(files) {
   buildWholeMatchPlayer();
 }
 function loadVideo(f) { loadVideos([f]); } // backwards compat
+
+// ═══════════════════════════════════════
+// IN-BROWSER TRANSCODER (WebCodecs + mp4-muxer)
+// ═══════════════════════════════════════
+// Target: 720p max, 2fps, H.264 ~500kbps → well under 95MB for 90min quarter
+const TRANSCODE_FPS       = 2;       // Gemini only samples 1fps anyway; 2 gives cleaner frames
+const TRANSCODE_MAX_W     = 1280;
+const TRANSCODE_MAX_H     = 720;
+const TRANSCODE_BITRATE   = 500_000; // 500kbps — plenty for analysis
+const TRANSCODE_MAX_BYTES = 90 * 1024 * 1024; // 90MB target
+
+function tLog(msg) {
+  const el = document.getElementById('transcode-log');
+  const s = document.createElement('div'); s.textContent = msg;
+  el.appendChild(s); el.scrollTop = el.scrollHeight;
+}
+function tSetP(pct) {
+  document.getElementById('transcode-prog-fill').style.width = Math.min(100,pct)+'%';
+}
+
+async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, overallProgressSlice) {
+  tLog(`\n📹 [${fileIdx+1}/${totalFiles}] ${file.name} (${fmtBytes(file.size)})`);
+
+  // Check WebCodecs support
+  if (typeof VideoEncoder === 'undefined') {
+    throw new Error('WebCodecs not supported in this browser. Please use Chrome 94+.');
+  }
+
+  // Get video dimensions and duration via a temporary video element
+  const origURL = URL.createObjectURL(file);
+  const { width: origW, height: origH, duration } = await new Promise((res, rej) => {
+    const v = document.createElement('video');
+    v.src = origURL;
+    v.onloadedmetadata = () => res({ width: v.videoWidth, height: v.videoHeight, duration: v.duration });
+    v.onerror = rej;
+  });
+
+  // Calculate output dimensions (maintain aspect, max 720p)
+  const scale = Math.min(1, TRANSCODE_MAX_W / origW, TRANSCODE_MAX_H / origH);
+  // WebCodecs requires dimensions divisible by 2
+  const outW = Math.floor(origW * scale / 2) * 2;
+  const outH = Math.floor(origH * scale / 2) * 2;
+  const totalFrames = Math.ceil(duration * TRANSCODE_FPS);
+
+  tLog(`  📐 ${origW}×${origH} → ${outW}×${outH}, ${duration.toFixed(0)}s, ~${totalFrames} frames @ ${TRANSCODE_FPS}fps`);
+
+  // Check H.264 encoder support, fall back to VP9 if needed
+  const avcConfig = { codec:'avc1.42E01F', width:outW, height:outH, bitrate:TRANSCODE_BITRATE,
+                      framerate:TRANSCODE_FPS, avc:{ format:'avc' } };
+  const vp9Config = { codec:'vp09.00.10.08', width:outW, height:outH, bitrate:TRANSCODE_BITRATE,
+                      framerate:TRANSCODE_FPS };
+  let encConfig, muxCodec;
+  const avcSupport = await VideoEncoder.isConfigSupported(avcConfig);
+  if (avcSupport.supported) {
+    encConfig = avcConfig; muxCodec = 'avc';
+    tLog(`  🎞 Codec: H.264 (hardware accelerated)`);
+  } else {
+    const vp9Support = await VideoEncoder.isConfigSupported(vp9Config);
+    if (!vp9Support.supported) throw new Error('Neither H.264 nor VP9 encoding supported in this browser.');
+    encConfig = vp9Config; muxCodec = 'vp9';
+    tLog(`  🎞 Codec: VP9 (H.264 not available)`);
+  }
+
+  // Set up mp4-muxer
+  const { Muxer, ArrayBufferTarget } = Mp4Muxer;
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target,
+    video: { codec: muxCodec, width: outW, height: outH },
+    fastStart: 'in-memory',
+  });
+
+  // Set up VideoEncoder
+  const chunks = [];
+  let encodedCount = 0;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => {
+      muxer.addVideoChunk(chunk, meta);
+      encodedCount++;
+    },
+    error: (e) => { throw new Error('Encoder error: ' + e.message); }
+  });
+  encoder.configure(encConfig);
+
+  // Seek through video frame by frame using a canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = outW; canvas.height = outH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const video = document.createElement('video');
+  video.src = origURL;
+  video.muted = true;
+  video.preload = 'auto';
+  await new Promise(res => { video.onloadeddata = res; video.load(); });
+
+  const frameInterval = 1 / TRANSCODE_FPS; // 0.5s between frames
+  let frameNum = 0;
+  const USEC = 1_000_000;
+
+  for (let t = 0; t < duration - 0.1; t += frameInterval) {
+    // Seek video to timestamp
+    await new Promise((res, rej) => {
+      video.onseeked = res;
+      video.onerror = rej;
+      video.currentTime = t;
+    });
+
+    // Draw frame to canvas
+    ctx.drawImage(video, 0, 0, outW, outH);
+
+    // Create VideoFrame from canvas
+    const bitmap = await createImageBitmap(canvas);
+    const vf = new VideoFrame(bitmap, {
+      timestamp: Math.round(t * USEC),
+      duration: Math.round(frameInterval * USEC),
+    });
+    bitmap.close();
+
+    // Encode — keyframe every 2 seconds (every TRANSCODE_FPS*2 frames)
+    const isKey = frameNum % (TRANSCODE_FPS * 2) === 0;
+    encoder.encode(vf, { keyFrame: isKey });
+    vf.close();
+    frameNum++;
+
+    // Backpressure: don't let queue grow too large
+    if (encoder.encodeQueueSize > 10) await encoder.flush();
+
+    // Progress
+    const filePct = (t / duration) * 100;
+    const overallPct = overallProgressBase + (filePct / 100) * overallProgressSlice;
+    tSetP(overallPct);
+    if (frameNum % 20 === 0) {
+      tLog(`  ⏳ ${t.toFixed(0)}s / ${duration.toFixed(0)}s (frame ${frameNum}/${totalFrames})`);
+    }
+  }
+
+  // Flush encoder and finalise muxer
+  tLog(`  🔧 Flushing encoder…`);
+  await encoder.flush();
+  encoder.close();
+  muxer.finalize();
+
+  URL.revokeObjectURL(origURL);
+  video.src = '';
+
+  // Convert to File object
+  const { buffer } = target;
+  const blob = new Blob([buffer], { type: 'video/mp4' });
+  const outName = file.name.replace(/\.[^.]+$/, '') + '_compressed.mp4';
+  const outFile = new File([blob], outName, { type: 'video/mp4' });
+
+  tLog(`  ✅ Done: ${fmtBytes(file.size)} → ${fmtBytes(blob.size)} (${Math.round(blob.size/file.size*100)}%)`);
+  return outFile;
+}
+
+async function runTranscode() {
+  const btn = document.getElementById('transcode-btn');
+  btn.disabled = true;
+  document.getElementById('transcode-prog').style.display = 'block';
+  document.getElementById('transcode-done').style.display = 'none';
+  document.getElementById('transcode-log').innerHTML = '';
+  tSetP(0);
+
+  // Check mp4-muxer loaded
+  if (typeof Mp4Muxer === 'undefined') {
+    tLog('❌ mp4-muxer library not loaded. Check your internet connection and reload.');
+    btn.disabled = false; return;
+  }
+
+  const MAX = 95 * 1024 * 1024;
+  const allFiles = videoFiles.length > 0 ? [...videoFiles] : [videoFile];
+  const needsTranscode = allFiles.filter(f => f.size > MAX);
+  const slicePerFile = 100 / allFiles.length;
+
+  tLog(`🚀 Starting compression — ${needsTranscode.length} file${needsTranscode.length!==1?'s':''} to compress`);
+  tLog(`⚠ Large files may take 5–15 minutes. Keep this tab open.`);
+
+  try {
+    const outFiles = [];
+    for (let i = 0; i < allFiles.length; i++) {
+      const f = allFiles[i];
+      if (f.size > MAX) {
+        const compressed = await transcodeFile(f, i, allFiles.length, i * slicePerFile, slicePerFile);
+        outFiles.push(compressed);
+      } else {
+        tLog(`\n✓ [${i+1}/${allFiles.length}] ${f.name} — already under limit, keeping original`);
+        outFiles.push(f);
+      }
+    }
+
+    tSetP(100);
+    tLog(`\n✅ All done! Reloading player with compressed files…`);
+
+    // Replace videoFiles with compressed versions and reload player
+    // Temporarily hide transcode panel — loadVideos will re-evaluate
+    await loadVideos(outFiles);
+
+    const doneEl = document.getElementById('transcode-done');
+    const origTotal = allFiles.reduce((s,f)=>s+f.size,0);
+    const newTotal  = outFiles.reduce((s,f)=>s+f.size,0);
+    doneEl.innerHTML = `✅ Compression complete — ${fmtBytes(origTotal)} → ${fmtBytes(newTotal)} `+
+      `(saved ${fmtBytes(origTotal-newTotal)}). Videos ready for Gemini.`;
+    doneEl.style.display = 'block';
+
+  } catch(e) {
+    tLog(`\n❌ Error: ${e.message}`);
+    console.error(e);
+  }
+  btn.disabled = false;
+}
 
 // ═══════════════════════════════════════
 // STITCHED FULL MATCH PLAYER
