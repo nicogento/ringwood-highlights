@@ -343,19 +343,12 @@ header {
       </div>
       <div class="gemini-found" id="gemini-found"></div>
 
-      <!-- Feedback panel — shown after detection -->
-      <div id="feedback-panel" style="display:none;margin-top:0.75rem;border:1px solid rgba(255,255,255,0.07);border-radius:8px;overflow:hidden;">
-        <div style="padding:0.5rem 0.75rem;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.07);font-size:0.72rem;color:#aaa;display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
-          <span>🧠 <strong style="color:#f5f5f5;">Train Gemini</strong> — mark each detection as correct or wrong to improve future searches</span>
-          <span id="feedback-count" style="font-size:0.68rem;color:#555;flex-shrink:0;"></span>
-        </div>
-        <div id="feedback-list" style="display:flex;flex-direction:column;gap:0;"></div>
-        <div style="padding:0.4rem 0.75rem;background:rgba(255,255,255,0.02);border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;">
-          <span style="font-size:0.68rem;color:#555;">Feedback stored locally and used in next detection run</span>
-          <div style="display:flex;gap:0.4rem;">
-            <button onclick="viewFeedbackSummary()" style="font-size:0.68rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:4px;color:#888;cursor:pointer;padding:0.2rem 0.5rem;">📊 Summary</button>
-            <button onclick="clearAllFeedback()" style="font-size:0.68rem;background:rgba(204,0,0,0.08);border:1px solid rgba(204,0,0,0.2);border-radius:4px;color:#f88;cursor:pointer;padding:0.2rem 0.5rem;">🗑 Clear all</button>
-          </div>
+      <!-- Feedback summary controls — compact, shown after detection -->
+      <div id="feedback-panel" style="display:none;margin-top:0.5rem;padding:0.35rem 0.65rem;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:6px;display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem;">
+        <span id="feedback-count" style="font-size:0.68rem;color:#555;">Use ✓/✗ buttons on each clip below to train Gemini</span>
+        <div style="display:flex;gap:0.35rem;">
+          <button onclick="viewFeedbackSummary()" style="font-size:0.68rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:4px;color:#888;cursor:pointer;padding:0.2rem 0.5rem;">📊 Summary</button>
+          <button onclick="clearAllFeedback()" style="font-size:0.68rem;background:rgba(204,0,0,0.08);border:1px solid rgba(204,0,0,0.2);border-radius:4px;color:#f88;cursor:pointer;padding:0.2rem 0.5rem;">🗑 Clear</button>
         </div>
       </div>
     </div>
@@ -408,11 +401,23 @@ header {
 
 <!-- PROCESS -->
 <div class="proc-wrap">
-  <div id="hd-toggle-wrap" style="display:none;margin-bottom:0.75rem;padding:0.6rem 0.9rem;background:rgba(66,133,244,0.08);border:1px solid rgba(66,133,244,0.2);border-radius:8px;font-size:0.78rem;color:#aaa;display:none;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-weight:600;color:#f5f5f5;">
-      <input type="checkbox" id="hd-export-chk" onchange="onHdToggle()"> Export in HD (original quality)
-    </label>
-    <span id="hd-status" style="font-size:0.72rem;color:#7aabf0;"></span>
+  <div id="hd-toggle-wrap" style="display:none;margin-bottom:0.75rem;padding:0.6rem 0.9rem;background:rgba(66,133,244,0.08);border:1px solid rgba(66,133,244,0.2);border-radius:8px;font-size:0.78rem;color:#aaa;">
+    <div style="font-size:0.68rem;color:#7aabf0;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem;">Export quality</div>
+    <div style="display:flex;flex-direction:column;gap:0.35rem;">
+      <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
+        <input type="radio" name="export-quality" value="preview" id="eq-preview" checked onchange="onHdToggle()">
+        <span><strong style="color:#f5f5f5;">Preview</strong> <span style="color:#666;">— compressed 720p (fast)</span></span>
+      </label>
+      <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
+        <input type="radio" name="export-quality" value="hd" id="eq-hd" onchange="onHdToggle()">
+        <span><strong style="color:#f5f5f5;">HD 1080p</strong> <span style="color:#666;">— from original files, canvas rendered at 1920×1080</span></span>
+      </label>
+      <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
+        <input type="radio" name="export-quality" value="4k" id="eq-4k" onchange="onHdToggle()">
+        <span><strong style="color:#f5f5f5;">4K</strong> <span style="color:#666;">— from original files, canvas rendered at 3840×2160 (slow)</span></span>
+      </label>
+    </div>
+    <div id="hd-status" style="font-size:0.72rem;color:#7aabf0;margin-top:0.45rem;"></div>
   </div>
   <button class="proc-btn" id="proc-btn" onclick="processAll()" disabled>
     <svg width="28" height="20" viewBox="0 0 28 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -995,7 +1000,7 @@ async function startHdPreload() {
       setTimeout(res, 60000); // don't block forever
     })));
     hdPreloadDone = true;
-    updateHdToggle(`✓ HD ready — ${rawVideoFiles.map(f=>f.name).join(', ')}`);
+    updateHdToggle(`✓ Original files ready for HD/4K export`); onHdToggle();
   } catch(e) {
     updateHdToggle(`⚠ HD preload error: ${e.message}`);
   }
@@ -1005,9 +1010,8 @@ function updateHdToggle(statusMsg) {
   const wrap = document.getElementById('hd-toggle-wrap');
   const status = document.getElementById('hd-status');
   if (!wrap) return;
-  // Show toggle only if we have raw files
   if (rawVideoFiles.length > 0) {
-    wrap.style.display = 'flex';
+    wrap.style.display = 'block';
     if (statusMsg !== undefined && status) status.textContent = statusMsg;
   } else {
     wrap.style.display = 'none';
@@ -1015,18 +1019,21 @@ function updateHdToggle(statusMsg) {
 }
 
 function onHdToggle() {
-  const chk = document.getElementById('hd-export-chk');
+  const val = document.querySelector('input[name="export-quality"]:checked')?.value || 'preview';
   const status = document.getElementById('hd-status');
-  if (!chk || !status) return;
-  if (chk.checked && !hdPreloadDone) {
-    status.textContent = '⏳ Still loading HD — export will wait until ready';
+  if (!status) return;
+  const needsRaw = val === 'hd' || val === '4k';
+  if (needsRaw && !hdPreloadDone) {
+    status.textContent = '⏳ Original files still buffering — export will wait until ready';
     status.style.color = '#f57c00';
-  } else if (chk.checked) {
-    status.textContent = '✓ Will export using original HD files';
+  } else if (val === '4k') {
+    status.textContent = '✓ 4K export ready — note: encoding will be slow (3840×2160 canvas)';
+    status.style.color = '#70c870';
+  } else if (val === 'hd') {
+    status.textContent = '✓ HD 1080p export ready using original files';
     status.style.color = '#70c870';
   } else {
-    status.textContent = hdPreloadDone ? '✓ HD ready — tick to use for export' : '';
-    status.style.color = '#7aabf0';
+    status.textContent = '';
   }
 }
 let wmCurrentFile = 0;
@@ -1513,7 +1520,19 @@ function makeClipCard(item,num){
       <span class="cts">${item.ts}</span>
       <input class="scorer" type="text" placeholder="Player name…" value="${esc(item.scorer)}" oninput="updateScorer(${item.id},this.value)">
       <button class="btn-sm btn-del" onclick="removeItem(${item.id})">✕ Remove</button>
-      ${item.geminiDetected ? `<button class="btn-sm" onclick="markFeedback(${item.id},'goal')" id="fb-goal-${item.id}" title="Confirm: this IS a goal" style="background:${getFeedbackState(item.id)==='goal'?'rgba(52,168,83,0.25)':'rgba(52,168,83,0.05)'};border-color:${getFeedbackState(item.id)==='goal'?'rgba(52,168,83,0.6)':'rgba(52,168,83,0.2)'};color:${getFeedbackState(item.id)==='goal'?'#70c870':'#558055'};padding:0.15rem 0.45rem;font-size:0.72rem;">✓ Goal</button><button class="btn-sm" onclick="markFeedback(${item.id},'false')" id="fb-false-${item.id}" title="Wrong: this is NOT a goal (false positive)" style="background:${getFeedbackState(item.id)==='false'?'rgba(204,0,0,0.25)':'rgba(204,0,0,0.05)'};border-color:${getFeedbackState(item.id)==='false'?'rgba(204,0,0,0.5)':'rgba(204,0,0,0.15)'};color:${getFeedbackState(item.id)==='false'?'#ff8080':'#883333'};padding:0.15rem 0.45rem;font-size:0.72rem;">✗ Not goal</button>` : ''}
+    </div>
+    <div style="display:flex;align-items:center;gap:0.35rem;padding:0.3rem 0.65rem;background:rgba(255,255,255,0.015);border-bottom:1px solid rgba(255,255,255,0.05);">
+      <span style="font-size:0.65rem;color:#555;flex:1;">🧠 Training feedback:</span>
+      <button onclick="markFeedback(${item.id},'goal')" title="Confirm: this IS a real goal"
+        style="font-size:0.7rem;padding:0.15rem 0.55rem;border-radius:4px;cursor:pointer;border:1px solid;transition:all 0.15s;
+        background:${item._feedback==='goal'?'rgba(52,168,83,0.25)':'rgba(52,168,83,0.05)'};
+        border-color:${item._feedback==='goal'?'rgba(52,168,83,0.5)':'rgba(52,168,83,0.18)'};
+        color:${item._feedback==='goal'?'#70c870':'#4a7a4a'};">✓ Real goal</button>
+      <button onclick="markFeedback(${item.id},'false')" title="Mark as false positive — not actually a goal"
+        style="font-size:0.7rem;padding:0.15rem 0.55rem;border-radius:4px;cursor:pointer;border:1px solid;transition:all 0.15s;
+        background:${item._feedback==='false'?'rgba(204,0,0,0.22)':'rgba(204,0,0,0.05)'};
+        border-color:${item._feedback==='false'?'rgba(204,0,0,0.45)':'rgba(204,0,0,0.15)'};
+        color:${item._feedback==='false'?'#ff8080':'#7a3333'};">✗ Not a goal</button>
     </div>
     <div style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.6rem;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.05);">
       ${item.playDesc ? `<span style="font-size:0.6rem;background:rgba(66,133,244,0.15);color:#7aabf0;border-radius:3px;padding:0.1rem 0.3rem;flex-shrink:0;white-space:nowrap;" title="Pre-filled by Gemini — edit freely">✦ Gemini</span>` : `<span style="font-size:0.6rem;color:#444;flex-shrink:0;white-space:nowrap;">overlay</span>`}
@@ -2113,46 +2132,34 @@ function markFeedback(itemId, verdict) {
   // Toggle off if already set to same verdict
   if (item._feedback === verdict) {
     item._feedback = null;
+    // Remove from localStorage
+    const fb = loadFeedback().filter(e => e.ts !== item.ts);
+    saveFeedback(fb);
   } else {
     item._feedback = verdict;
-
     // Persist to localStorage
-    const fb = loadFeedback();
-    // Remove any existing entry for this timestamp
-    const filtered = fb.filter(e => e.ts !== item.ts);
-    filtered.push({
+    const fb = loadFeedback().filter(e => e.ts !== item.ts);
+    fb.push({
       ts: item.ts,
       verdict,
       scorer: item.scorer || '',
       storedAt: new Date().toISOString(),
       matchName: (videoFiles[0] || videoFile)?.name || 'unknown'
     });
-    // Keep only last 200 entries
-    saveFeedback(filtered.slice(-200));
+    saveFeedback(fb.slice(-200));
   }
 
-  // Re-render just this clip card to update button states
+  // Re-render clip cards to update button highlight states
   renderTL();
+  // Also refresh feedback panel if visible
+  updateFeedbackCount();
 }
 
 function buildFeedbackPanel(detectedTimestamps) {
   const panel = document.getElementById('feedback-panel');
-  const list  = document.getElementById('feedback-list');
-  if (!panel || !list) return;
-
-  list.innerHTML = detectedTimestamps.map((r, i) => {
-    const fb = loadFeedback().find(e => e.ts === r.ts);
-    const verdict = fb?.verdict || null;
-    return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.7rem;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.75rem;background:${verdict==='goal'?'rgba(52,168,83,0.04)':verdict==='false'?'rgba(204,0,0,0.04)':''};">
-      <span style="color:#888;min-width:2rem;font-family:monospace;">${r.ts}</span>
-      <span style="flex:1;color:#ccc;">Detected by Gemini</span>
-      <button onclick="markFeedbackByTs('${r.ts}','goal')" style="font-size:0.68rem;padding:0.18rem 0.45rem;border-radius:4px;cursor:pointer;background:${verdict==='goal'?'rgba(52,168,83,0.3)':'rgba(52,168,83,0.06)'};border:1px solid ${verdict==='goal'?'rgba(52,168,83,0.6)':'rgba(52,168,83,0.15)'};color:${verdict==='goal'?'#70c870':'#4a7a4a'};" title="Confirm: this is a real goal">✓ Goal</button>
-      <button onclick="markFeedbackByTs('${r.ts}','false')" style="font-size:0.68rem;padding:0.18rem 0.45rem;border-radius:4px;cursor:pointer;background:${verdict==='false'?'rgba(204,0,0,0.25)':'rgba(204,0,0,0.06)'};border:1px solid ${verdict==='false'?'rgba(204,0,0,0.5)':'rgba(204,0,0,0.15)'};color:${verdict==='false'?'#ff8080':'#7a3333'};" title="Wrong: this is NOT a goal">✗ Not a goal</button>
-    </div>`;
-  }).join('');
-
+  if (!panel) return;
   updateFeedbackCount();
-  panel.style.display = 'block';
+  panel.style.display = 'flex';
 }
 
 function markFeedbackByTs(ts, verdict) {
@@ -2391,7 +2398,7 @@ async function runGeminiDetection() {
       let added = 0;
       deduped.forEach(play => {
         if (!items.find(i => i.type === 'clip' && i.ts === play.ts)) {
-          items.push({ type: 'clip', id: uid(), ts: play.ts, scorer: '', playDesc: play.label === 'GOAL' ? 'GOAL!' : play.label === 'SAVE' ? 'GREAT SAVE!' : play.label === 'DRIBBLE' ? 'SKILLS!' : play.label === 'PASS' ? 'GREAT PLAY!' : play.label, playDescDur: 2, before: 2, after: 2, overlay: true });
+          items.push({ type: 'clip', id: uid(), ts: play.ts, scorer: '', playDesc: play.label === 'GOAL' ? 'GOAL!' : play.label === 'SAVE' ? 'GREAT SAVE!' : play.label === 'DRIBBLE' ? 'SKILLS!' : play.label === 'PASS' ? 'GREAT PLAY!' : play.label, playDescDur: 2, before: 2, after: 2, overlay: true, geminiDetected: true });
           added++;
         }
       });
@@ -2428,6 +2435,20 @@ async function getVideoDuration(file) {
   });
 }
 
+
+// Semaphore to limit concurrent Gemini file uploads (API handles ~2 at once reliably)
+const _uploadSem = { count: 0, max: 2, queue: [] };
+function _uploadAcquire() {
+  return new Promise(res => {
+    if (_uploadSem.count < _uploadSem.max) { _uploadSem.count++; res(); }
+    else _uploadSem.queue.push(res);
+  });
+}
+function _uploadRelease() {
+  if (_uploadSem.queue.length) { _uploadSem.queue.shift()(); }
+  else _uploadSem.count--;
+}
+
 async function uploadToGeminiFiles(blob, mimeType, chunkNum, totalChunks) {
   // Multipart upload — works from browsers (no custom X-Goog headers = no CORS block)
   const metadata = JSON.stringify({ file: { display_name: `rtfc_chunk_${chunkNum}_of_${totalChunks}` } });
@@ -2435,38 +2456,60 @@ async function uploadToGeminiFiles(blob, mimeType, chunkNum, totalChunks) {
   body.append('metadata', new Blob([metadata], { type: 'application/json' }));
   body.append('file', blob, `chunk_${chunkNum}.mp4`);
 
-  const res = await fetch(
-    gUrl(`/upload/v1beta/files?uploadType=multipart&key=${geminiKey}`),
-    { method: 'POST', body }
-  );
+  await _uploadAcquire();
+  gLog(`  📤 [${chunkNum}] Upload slot acquired, sending ${fmtBytes(blob.size)}…`);
+  try {
+    // 5-minute timeout on upload fetch
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+    let res;
+    try {
+      res = await fetch(
+        gUrl(`/upload/v1beta/files?uploadType=multipart&key=${geminiKey}`),
+        { method: 'POST', body, signal: controller.signal }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
 
-  if (!res.ok) {
-    const err = await res.text();
-    if (res.status === 400 || res.status === 403) throw new Error('API key not valid — please check and re-enter');
-    throw new Error(`Upload failed (${res.status}): ${err.slice(0,600)}`);
+    if (!res.ok) {
+      const err = await res.text();
+      if (res.status === 400 || res.status === 403) throw new Error('API key not valid — please check and re-enter');
+      throw new Error(`Upload failed (${res.status}): ${err.slice(0,300)}`);
+    }
+
+    const data = await res.json();
+    const fileUri = data?.file?.uri;
+    if (!fileUri) throw new Error('No file URI in upload response');
+
+    gLog(`  ✓ [${chunkNum}] Uploaded. Waiting for Gemini processing…`);
+    return await waitForFileActive(fileUri, chunkNum);
+  } finally {
+    _uploadRelease();
   }
-
-  const data = await res.json();
-  const fileUri = data?.file?.uri;
-  if (!fileUri) throw new Error('No file URI in upload response');
-
-  return await waitForFileActive(fileUri);
 }
 
-async function waitForFileActive(fileUri) {
+async function waitForFileActive(fileUri, chunkNum) {
   const fileId = fileUri.split('/').pop();
-  gLog(`  ⏳ Waiting for file (id: ${fileId})…`);
-  for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 3000));
-    const res = await fetch(gUrl(`/v1beta/files/${fileId}?key=${geminiKey}`));
-    if (!res.ok) continue;
-    const data = await res.json();
-    const state = data?.state || data?.file?.state;
-    gLog(`  📄 File state: ${state} (check ${i+1})`);
-    if (state === 'ACTIVE') return fileUri;
-    if (state === 'FAILED') throw new Error('Gemini file processing failed');
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 4000));
+    try {
+      const res = await fetch(gUrl(`/v1beta/files/${fileId}?key=${geminiKey}`));
+      if (!res.ok) continue;
+      const data = await res.json();
+      const state = data?.state || data?.file?.state;
+      // Only log every 3 checks or on state change to keep log clean
+      if (i % 3 === 0 || state === 'ACTIVE' || state === 'FAILED') {
+        gLog(`  ⏳ [${chunkNum}] File ${state||'PROCESSING'} (${(i+1)*4}s elapsed)`);
+      }
+      if (state === 'ACTIVE') return fileUri;
+      if (state === 'FAILED') throw new Error(`Gemini file processing failed for chunk ${chunkNum}`);
+    } catch(e) {
+      if (e.message.includes('failed')) throw e;
+      // Network error on poll — just retry
+    }
   }
-  throw new Error('Timed out waiting for Gemini to process file');
+  throw new Error(`Timed out waiting for Gemini to process file ${chunkNum} (160s)`);
 }
 
 async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mimeType, playConfig) {
@@ -2696,19 +2739,18 @@ async function processAll() {
     muteGain.connect(audioCtx.destination);
 
     // Build one video element per source file
-    // Use HD originals if the toggle is checked and preload is done
-    const useHd = document.getElementById('hd-export-chk')?.checked && hdPreloadDone && hdVideoEls.length === fileURLs.length;
-    if (useHd) {
-      log('🎬 Using HD original files for export', 'l-ok');
+    const exportQuality = document.querySelector('input[name="export-quality"]:checked')?.value || 'preview';
+    const useRaw = (exportQuality === 'hd' || exportQuality === '4k') && hdPreloadDone && hdVideoEls.length === fileURLs.length;
+    if (useRaw) {
+      log(`🎬 Using original files for ${exportQuality.toUpperCase()} export`, 'l-ok');
     }
 
-    const videoEls = useHd ? await Promise.all(hdVideoEls.map(async (v, fi) => {
-      // HD elements are already loaded — just reconnect audio for this export
+    const videoEls = useRaw ? await Promise.all(hdVideoEls.map(async (v, fi) => {
       v.muted = false; v.volume = 1; v.playsInline = true;
       const src = audioCtx.createMediaElementSource(v);
       src.connect(muteGain);
       src.connect(audioDest);
-      log(`✓ HD file ${fi+1}: ${rawVideoFiles[fi].name}`, 'l-ok');
+      log(`✓ Original file ${fi+1}: ${rawVideoFiles[fi].name}`, 'l-ok');
       return v;
     })) : await Promise.all(fileURLs.map(async (url, fi) => {
       const v = document.createElement('video');
@@ -2746,8 +2788,10 @@ async function processAll() {
     });
     if (badgeImg) log('✓ Club badge ready', 'l-ok');
 
-    // Canvas at 1080p for crisp rendering
-    const W = 1920, H = 1080;
+    // Canvas size driven by export quality selection
+    const W = exportQuality === '4k' ? 3840 : 1920;
+    const H = exportQuality === '4k' ? 2160 : 1080;
+    log(`🎨 Canvas: ${W}×${H} (${exportQuality})`, 'l-ok');
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
@@ -3196,6 +3240,6 @@ renderTsPanel(); // initialise Step 2 panel
   img.onload = () => { img.style.display = 'block'; };
 })();
 </script>
-<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 00:52 UTC</div>
+<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 01:35 UTC</div>
 </body>
 </html>
