@@ -338,6 +338,22 @@ header {
         <button id="gemini-copy-log-btn" onclick="copyGeminiLog()" style="display:none;margin-top:0.5rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:5px;color:#aaa;cursor:pointer;font-size:0.7rem;padding:0.3rem 0.7rem;">📋 Copy log</button>
       </div>
       <div class="gemini-found" id="gemini-found"></div>
+
+      <!-- Feedback panel — shown after detection -->
+      <div id="feedback-panel" style="display:none;margin-top:0.75rem;border:1px solid rgba(255,255,255,0.07);border-radius:8px;overflow:hidden;">
+        <div style="padding:0.5rem 0.75rem;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.07);font-size:0.72rem;color:#aaa;display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+          <span>🧠 <strong style="color:#f5f5f5;">Train Gemini</strong> — mark each detection as correct or wrong to improve future searches</span>
+          <span id="feedback-count" style="font-size:0.68rem;color:#555;flex-shrink:0;"></span>
+        </div>
+        <div id="feedback-list" style="display:flex;flex-direction:column;gap:0;"></div>
+        <div style="padding:0.4rem 0.75rem;background:rgba(255,255,255,0.02);border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;">
+          <span style="font-size:0.68rem;color:#555;">Feedback stored locally and used in next detection run</span>
+          <div style="display:flex;gap:0.4rem;">
+            <button onclick="viewFeedbackSummary()" style="font-size:0.68rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:4px;color:#888;cursor:pointer;padding:0.2rem 0.5rem;">📊 Summary</button>
+            <button onclick="clearAllFeedback()" style="font-size:0.68rem;background:rgba(204,0,0,0.08);border:1px solid rgba(204,0,0,0.2);border-radius:4px;color:#f88;cursor:pointer;padding:0.2rem 0.5rem;">🗑 Clear all</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="panel">
       <div class="ptitle">Step 2 — Goal Timestamps</div>
@@ -582,138 +598,127 @@ function tSetP(pct) {
   document.getElementById('transcode-prog-fill').style.width = Math.min(100,pct)+'%';
 }
 
-async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, overallProgressSlice) {
-  tLog(`\n📹 [${fileIdx+1}/${totalFiles}] ${file.name} (${fmtBytes(file.size)})`);
+const TRANSCODE_SEGMENTS = 4; // parallel compression segments per file
 
-  // Check WebCodecs support
-  if (typeof VideoEncoder === 'undefined') {
-    throw new Error('WebCodecs not supported in this browser. Please use Chrome 94+.');
-  }
+// Encode one time segment of a file; returns sorted array of {chunk, meta}
+async function transcodeSegment(file, startT, endT, outW, outH, encConfig, segLabel, progressCb) {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.src = url; video.muted = true; video.preload = 'auto';
+  await new Promise(res => { video.onloadeddata = res; video.load(); });
 
-  // Get video dimensions and duration via a temporary video element
-  const origURL = URL.createObjectURL(file);
-  const { width: origW, height: origH, duration } = await new Promise((res, rej) => {
-    const v = document.createElement('video');
-    v.src = origURL;
-    v.onloadedmetadata = () => res({ width: v.videoWidth, height: v.videoHeight, duration: v.duration });
-    v.onerror = rej;
-  });
-
-  // Calculate output dimensions (maintain aspect, max 720p)
-  const scale = Math.min(1, TRANSCODE_MAX_W / origW, TRANSCODE_MAX_H / origH);
-  // WebCodecs requires dimensions divisible by 2
-  const outW = Math.floor(origW * scale / 2) * 2;
-  const outH = Math.floor(origH * scale / 2) * 2;
-  const totalFrames = Math.ceil(duration * TRANSCODE_FPS);
-  const bitrate = calcBitrate(duration);
-
-  tLog(`  📐 ${origW}×${origH} → ${outW}×${outH}, ${duration.toFixed(0)}s, ~${totalFrames} frames @ ${TRANSCODE_FPS}fps, ${Math.round(bitrate/1000)}kbps`);
-  tLog(`  📦 Estimated output: ~${fmtBytes(bitrate * duration / 8)}`);
-
-  // Check H.264 encoder support, fall back to VP9 if needed
-  const avcConfig = { codec:'avc1.42E01F', width:outW, height:outH, bitrate,
-                      framerate:TRANSCODE_FPS, avc:{ format:'avc' } };
-  const vp9Config = { codec:'vp09.00.10.08', width:outW, height:outH, bitrate,
-                      framerate:TRANSCODE_FPS };
-  let encConfig, muxCodec;
-  const avcSupport = await VideoEncoder.isConfigSupported(avcConfig);
-  if (avcSupport.supported) {
-    encConfig = avcConfig; muxCodec = 'avc';
-    tLog(`  🎞 Codec: H.264 (hardware accelerated)`);
-  } else {
-    const vp9Support = await VideoEncoder.isConfigSupported(vp9Config);
-    if (!vp9Support.supported) throw new Error('Neither H.264 nor VP9 encoding supported in this browser.');
-    encConfig = vp9Config; muxCodec = 'vp9';
-    tLog(`  🎞 Codec: VP9 (H.264 not available)`);
-  }
-
-  // Set up mp4-muxer
-  const { Muxer, ArrayBufferTarget } = Mp4Muxer;
-  const target = new ArrayBufferTarget();
-  const muxer = new Muxer({
-    target,
-    video: { codec: muxCodec, width: outW, height: outH },
-    fastStart: 'in-memory',
-  });
-
-  // Set up VideoEncoder
-  const chunks = [];
-  let encodedCount = 0;
-  const encoder = new VideoEncoder({
-    output: (chunk, meta) => {
-      muxer.addVideoChunk(chunk, meta);
-      encodedCount++;
-    },
-    error: (e) => { throw new Error('Encoder error: ' + e.message); }
-  });
-  encoder.configure(encConfig);
-
-  // Seek through video frame by frame using a canvas
   const canvas = document.createElement('canvas');
   canvas.width = outW; canvas.height = outH;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  const video = document.createElement('video');
-  video.src = origURL;
-  video.muted = true;
-  video.preload = 'auto';
-  await new Promise(res => { video.onloadeddata = res; video.load(); });
 
-  const frameInterval = 1 / TRANSCODE_FPS; // 0.5s between frames
-  let frameNum = 0;
   const USEC = 1_000_000;
+  const frameInterval = 1 / TRANSCODE_FPS;
+  const encodedChunks = []; // { chunk, meta, ts }
+  let frameNum = 0;
 
-  for (let t = 0; t < duration - 0.1; t += frameInterval) {
-    // Seek video to timestamp
-    await new Promise((res, rej) => {
-      video.onseeked = res;
-      video.onerror = rej;
-      video.currentTime = t;
-    });
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => encodedChunks.push({ chunk, meta, ts: chunk.timestamp }),
+    error: (e) => { throw new Error('Encoder: ' + e.message); }
+  });
+  encoder.configure(encConfig);
 
-    // Draw frame to canvas
+  const totalSegFrames = Math.ceil((endT - startT) * TRANSCODE_FPS);
+  for (let t = startT; t < endT - 0.05; t += frameInterval) {
+    await new Promise((res, rej) => { video.onseeked = res; video.onerror = rej; video.currentTime = t; });
     ctx.drawImage(video, 0, 0, outW, outH);
-
-    // Create VideoFrame from canvas
     const bitmap = await createImageBitmap(canvas);
     const vf = new VideoFrame(bitmap, {
       timestamp: Math.round(t * USEC),
-      duration: Math.round(frameInterval * USEC),
+      duration:  Math.round(frameInterval * USEC),
     });
     bitmap.close();
-
-    // Encode — keyframe every 2 seconds (every TRANSCODE_FPS*2 frames)
-    const isKey = frameNum % (TRANSCODE_FPS * 2) === 0;
+    // Always keyframe at segment start so merge works cleanly
+    const isKey = frameNum === 0 || frameNum % (TRANSCODE_FPS * 2) === 0;
     encoder.encode(vf, { keyFrame: isKey });
     vf.close();
     frameNum++;
-
-    // Backpressure: don't let queue grow too large
     if (encoder.encodeQueueSize > 10) await encoder.flush();
-
-    // Progress
-    const filePct = (t / duration) * 100;
-    const overallPct = overallProgressBase + (filePct / 100) * overallProgressSlice;
-    tSetP(overallPct);
-    if (frameNum % 20 === 0) {
-      tLog(`  ⏳ ${t.toFixed(0)}s / ${duration.toFixed(0)}s (frame ${frameNum}/${totalFrames})`);
-    }
+    if (progressCb && frameNum % 10 === 0) progressCb(frameNum / totalSegFrames);
   }
 
-  // Flush encoder and finalise muxer
-  tLog(`  🔧 Flushing encoder…`);
   await encoder.flush();
   encoder.close();
+  video.src = ''; URL.revokeObjectURL(url);
+
+  // Sort by timestamp (encoder may reorder)
+  encodedChunks.sort((a, b) => a.ts - b.ts);
+  return encodedChunks;
+}
+
+async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, overallProgressSlice) {
+  tLog(`\n📹 [${fileIdx+1}/${totalFiles}] ${file.name} (${fmtBytes(file.size)})`);
+
+  if (typeof VideoEncoder === 'undefined') throw new Error('WebCodecs not supported. Use Chrome 94+.');
+
+  const origURL = URL.createObjectURL(file);
+  const { width: origW, height: origH, duration } = await new Promise((res, rej) => {
+    const v = document.createElement('video');
+    v.src = origURL; v.onloadedmetadata = () => res({ width: v.videoWidth, height: v.videoHeight, duration: v.duration }); v.onerror = rej;
+  });
+  URL.revokeObjectURL(origURL);
+
+  const scale = Math.min(1, TRANSCODE_MAX_W / origW, TRANSCODE_MAX_H / origH);
+  const outW = Math.floor(origW * scale / 2) * 2;
+  const outH = Math.floor(origH * scale / 2) * 2;
+  const bitrate = calcBitrate(duration);
+
+  tLog(`  📐 ${origW}×${origH} → ${outW}×${outH}, ${duration.toFixed(0)}s @ ${TRANSCODE_FPS}fps, ${Math.round(bitrate/1000)}kbps`);
+  tLog(`  ⚡ Splitting into ${TRANSCODE_SEGMENTS} parallel segments…`);
+
+  // Detect codec
+  const avcConfig = { codec:'avc1.42E01F', width:outW, height:outH, bitrate, framerate:TRANSCODE_FPS, avc:{ format:'avc' } };
+  const vp9Config = { codec:'vp09.00.10.08', width:outW, height:outH, bitrate, framerate:TRANSCODE_FPS };
+  let encConfig, muxCodec;
+  if ((await VideoEncoder.isConfigSupported(avcConfig)).supported) {
+    encConfig = avcConfig; muxCodec = 'avc';
+    tLog(`  🎞 Codec: H.264`);
+  } else if ((await VideoEncoder.isConfigSupported(vp9Config)).supported) {
+    encConfig = vp9Config; muxCodec = 'vp9';
+    tLog(`  🎞 Codec: VP9`);
+  } else throw new Error('No supported encoder found.');
+
+  // Build segment time ranges
+  const segDur = duration / TRANSCODE_SEGMENTS;
+  const segments = Array.from({ length: TRANSCODE_SEGMENTS }, (_, i) => ({
+    startT: i * segDur,
+    endT:   Math.min((i + 1) * segDur, duration),
+    label:  `seg${i+1}`
+  }));
+
+  // Track per-segment progress
+  const segProgress = new Array(TRANSCODE_SEGMENTS).fill(0);
+  const updateProgress = (segIdx, pct) => {
+    segProgress[segIdx] = pct;
+    const overall = segProgress.reduce((a,b)=>a+b,0) / TRANSCODE_SEGMENTS;
+    tSetP(overallProgressBase + overall * overallProgressSlice);
+  };
+
+  tLog(`  ⏳ Encoding ${TRANSCODE_SEGMENTS} segments in parallel…`);
+
+  // Run all segments in parallel
+  const segResults = await Promise.all(segments.map((seg, i) =>
+    transcodeSegment(file, seg.startT, seg.endT, outW, outH, encConfig, seg.label,
+      (pct) => updateProgress(i, pct))
+  ));
+
+  tLog(`  🔧 Merging ${TRANSCODE_SEGMENTS} segments…`);
+
+  // Merge all chunks in timestamp order into one muxer
+  const { Muxer, ArrayBufferTarget } = Mp4Muxer;
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({ target, video: { codec: muxCodec, width: outW, height: outH }, fastStart: 'in-memory' });
+  const allChunks = segResults.flat().sort((a, b) => a.ts - b.ts);
+  allChunks.forEach(({ chunk, meta }) => muxer.addVideoChunk(chunk, meta));
   muxer.finalize();
 
-  URL.revokeObjectURL(origURL);
-  video.src = '';
-
-  // Convert to File object
-  const { buffer } = target;
-  const blob = new Blob([buffer], { type: 'video/mp4' });
+  const blob = new Blob([target.buffer], { type: 'video/mp4' });
   const outName = file.name.replace(/\.[^.]+$/, '') + '_compressed.mp4';
   const outFile = new File([blob], outName, { type: 'video/mp4' });
-
   tLog(`  ✅ Done: ${fmtBytes(file.size)} → ${fmtBytes(blob.size)} (${Math.round(blob.size/file.size*100)}%)`);
   return outFile;
 }
@@ -739,20 +744,18 @@ async function runTranscode() {
   const slicePerFile = 100 / allFiles.length;
 
   tLog(`🚀 Starting compression — ${needsTranscode.length} file${needsTranscode.length!==1?'s':''} to compress`);
-  tLog(`⚠ Large files may take 5–15 minutes. Keep this tab open.`);
+  tLog(`⚡ All files compressed in parallel with ${TRANSCODE_SEGMENTS} segments each. Keep this tab open.`);
 
   try {
-    const outFiles = [];
-    for (let i = 0; i < allFiles.length; i++) {
-      const f = allFiles[i];
+    // Run all files in parallel — each file runs its own 4 parallel segments
+    const outFiles = await Promise.all(allFiles.map((f, i) => {
       if (f.size > MAX) {
-        const compressed = await transcodeFile(f, i, allFiles.length, i * slicePerFile, slicePerFile);
-        outFiles.push(compressed);
+        return transcodeFile(f, i, allFiles.length, i * slicePerFile, slicePerFile);
       } else {
         tLog(`\n✓ [${i+1}/${allFiles.length}] ${f.name} — already under limit, keeping original`);
-        outFiles.push(f);
+        return Promise.resolve(f);
       }
-    }
+    }));
 
     tSetP(100);
     tLog(`\n✅ All done! Reloading player with compressed files…`);
@@ -1448,6 +1451,7 @@ function makeClipCard(item,num){
       <span class="cts">${item.ts}</span>
       <input class="scorer" type="text" placeholder="Player name…" value="${esc(item.scorer)}" oninput="updateScorer(${item.id},this.value)">
       <button class="btn-sm btn-del" onclick="removeItem(${item.id})">✕ Remove</button>
+      ${item.geminiDetected ? `<button class="btn-sm" onclick="markFeedback(${item.id},'goal')" id="fb-goal-${item.id}" title="Confirm: this IS a goal" style="background:${getFeedbackState(item.id)==='goal'?'rgba(52,168,83,0.25)':'rgba(52,168,83,0.05)'};border-color:${getFeedbackState(item.id)==='goal'?'rgba(52,168,83,0.6)':'rgba(52,168,83,0.2)'};color:${getFeedbackState(item.id)==='goal'?'#70c870':'#558055'};padding:0.15rem 0.45rem;font-size:0.72rem;">✓ Goal</button><button class="btn-sm" onclick="markFeedback(${item.id},'false')" id="fb-false-${item.id}" title="Wrong: this is NOT a goal (false positive)" style="background:${getFeedbackState(item.id)==='false'?'rgba(204,0,0,0.25)':'rgba(204,0,0,0.05)'};border-color:${getFeedbackState(item.id)==='false'?'rgba(204,0,0,0.5)':'rgba(204,0,0,0.15)'};color:${getFeedbackState(item.id)==='false'?'#ff8080':'#883333'};padding:0.15rem 0.45rem;font-size:0.72rem;">✗ Not goal</button>` : ''}
     </div>
     <div style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.6rem;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.05);">
       ${item.playDesc ? `<span style="font-size:0.6rem;background:rgba(66,133,244,0.15);color:#7aabf0;border-radius:3px;padding:0.1rem 0.3rem;flex-shrink:0;white-space:nowrap;" title="Pre-filled by Gemini — edit freely">✦ Gemini</span>` : `<span style="font-size:0.6rem;color:#444;flex-shrink:0;white-space:nowrap;">overlay</span>`}
@@ -2019,6 +2023,161 @@ function checkGeminiReady() {
   setTimeout(waitForKey, 200);
 })();
 
+// ═══════════════════════════════════════
+// GOAL FEEDBACK SYSTEM
+// ═══════════════════════════════════════
+// Stores confirmed goals and false positives in localStorage to improve future prompts.
+// Each entry: { ts, verdict: 'goal'|'false', note, matchName, storedAt }
+const FEEDBACK_KEY = 'rtfc_goal_feedback_v1';
+
+function loadFeedback() {
+  try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '[]'); } catch { return []; }
+}
+function saveFeedback(arr) {
+  try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(arr)); } catch(e) { console.warn('Feedback save failed:', e); }
+}
+
+// Get the stored verdict for a clip item (by its timestamp)
+function getFeedbackState(itemId) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return null;
+  return item._feedback || null;
+}
+
+function markFeedback(itemId, verdict) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+
+  // Toggle off if already set to same verdict
+  if (item._feedback === verdict) {
+    item._feedback = null;
+  } else {
+    item._feedback = verdict;
+
+    // Persist to localStorage
+    const fb = loadFeedback();
+    // Remove any existing entry for this timestamp
+    const filtered = fb.filter(e => e.ts !== item.ts);
+    filtered.push({
+      ts: item.ts,
+      verdict,
+      scorer: item.scorer || '',
+      storedAt: new Date().toISOString(),
+      matchName: (videoFiles[0] || videoFile)?.name || 'unknown'
+    });
+    // Keep only last 200 entries
+    saveFeedback(filtered.slice(-200));
+  }
+
+  // Re-render just this clip card to update button states
+  renderTL();
+}
+
+function buildFeedbackPanel(detectedTimestamps) {
+  const panel = document.getElementById('feedback-panel');
+  const list  = document.getElementById('feedback-list');
+  if (!panel || !list) return;
+
+  list.innerHTML = detectedTimestamps.map((r, i) => {
+    const fb = loadFeedback().find(e => e.ts === r.ts);
+    const verdict = fb?.verdict || null;
+    return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.7rem;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.75rem;background:${verdict==='goal'?'rgba(52,168,83,0.04)':verdict==='false'?'rgba(204,0,0,0.04)':''};">
+      <span style="color:#888;min-width:2rem;font-family:monospace;">${r.ts}</span>
+      <span style="flex:1;color:#ccc;">Detected by Gemini</span>
+      <button onclick="markFeedbackByTs('${r.ts}','goal')" style="font-size:0.68rem;padding:0.18rem 0.45rem;border-radius:4px;cursor:pointer;background:${verdict==='goal'?'rgba(52,168,83,0.3)':'rgba(52,168,83,0.06)'};border:1px solid ${verdict==='goal'?'rgba(52,168,83,0.6)':'rgba(52,168,83,0.15)'};color:${verdict==='goal'?'#70c870':'#4a7a4a'};" title="Confirm: this is a real goal">✓ Goal</button>
+      <button onclick="markFeedbackByTs('${r.ts}','false')" style="font-size:0.68rem;padding:0.18rem 0.45rem;border-radius:4px;cursor:pointer;background:${verdict==='false'?'rgba(204,0,0,0.25)':'rgba(204,0,0,0.06)'};border:1px solid ${verdict==='false'?'rgba(204,0,0,0.5)':'rgba(204,0,0,0.15)'};color:${verdict==='false'?'#ff8080':'#7a3333'};" title="Wrong: this is NOT a goal">✗ Not a goal</button>
+    </div>`;
+  }).join('');
+
+  updateFeedbackCount();
+  panel.style.display = 'block';
+}
+
+function markFeedbackByTs(ts, verdict) {
+  const fb = loadFeedback();
+  const filtered = fb.filter(e => e.ts !== ts);
+  // Find existing to toggle
+  const existing = fb.find(e => e.ts === ts);
+  if (!existing || existing.verdict !== verdict) {
+    filtered.push({
+      ts, verdict,
+      storedAt: new Date().toISOString(),
+      matchName: (videoFiles[0] || videoFile)?.name || 'unknown'
+    });
+  }
+  saveFeedback(filtered.slice(-200));
+  // Refresh panel by re-running buildFeedbackPanel with current timestamps
+  const panel = document.getElementById('feedback-panel');
+  if (panel && panel.style.display !== 'none') {
+    // Re-render rows in place
+    const rows = document.querySelectorAll('#feedback-list > div');
+    rows.forEach(row => {
+      const tsSpan = row.querySelector('span[style*="monospace"]');
+      if (!tsSpan || tsSpan.textContent.trim() !== ts) return;
+      const newVerdict = filtered.find(e=>e.ts===ts)?.verdict || null;
+      const [goalBtn, falseBtn] = row.querySelectorAll('button');
+      goalBtn.style.background  = newVerdict==='goal' ?'rgba(52,168,83,0.3)' :'rgba(52,168,83,0.06)';
+      goalBtn.style.borderColor = newVerdict==='goal' ?'rgba(52,168,83,0.6)' :'rgba(52,168,83,0.15)';
+      goalBtn.style.color       = newVerdict==='goal' ?'#70c870'              :'#4a7a4a';
+      falseBtn.style.background = newVerdict==='false'?'rgba(204,0,0,0.25)'  :'rgba(204,0,0,0.06)';
+      falseBtn.style.borderColor= newVerdict==='false'?'rgba(204,0,0,0.5)'   :'rgba(204,0,0,0.15)';
+      falseBtn.style.color      = newVerdict==='false'?'#ff8080'              :'#7a3333';
+      row.style.background      = newVerdict==='goal'?'rgba(52,168,83,0.04)':newVerdict==='false'?'rgba(204,0,0,0.04)':'';
+    });
+    updateFeedbackCount();
+  }
+  // Also update clip cards if visible
+  renderTL();
+}
+
+function updateFeedbackCount() {
+  const el = document.getElementById('feedback-count');
+  if (!el) return;
+  const all = loadFeedback();
+  const goals = all.filter(e=>e.verdict==='goal').length;
+  const falses = all.filter(e=>e.verdict==='false').length;
+  el.textContent = `${goals} confirmed · ${falses} rejected (${all.length} total stored)`;
+}
+
+function viewFeedbackSummary() {
+  const fb = loadFeedback();
+  if (fb.length === 0) { alert('No feedback stored yet.'); return; }
+  const goals  = fb.filter(e=>e.verdict==='goal');
+  const falses = fb.filter(e=>e.verdict==='false');
+  alert(`📊 Stored Feedback Summary\n\n✓ Confirmed goals (${goals.length}):\n${goals.map(e=>`  ${e.ts} – ${e.matchName}`).join('\n')||'  none'}\n\n✗ False positives (${falses.length}):\n${falses.map(e=>`  ${e.ts} – ${e.matchName}`).join('\n')||'  none'}\n\nThis feedback is injected into every future detection prompt.`);
+}
+
+function clearAllFeedback() {
+  if (!confirm('Clear all stored goal feedback? This cannot be undone.')) return;
+  localStorage.removeItem(FEEDBACK_KEY);
+  updateFeedbackCount();
+  buildFeedbackPanel([]); // reset display
+  renderTL();
+}
+
+// Build the few-shot feedback block to inject into the goals prompt
+function buildFeedbackPromptBlock() {
+  const fb = loadFeedback();
+  if (fb.length === 0) return '';
+  const goals  = fb.filter(e=>e.verdict==='goal');
+  const falses = fb.filter(e=>e.verdict==='false');
+  let block = '\n\nLEARNED FROM PREVIOUS MATCHES (use this to calibrate your detection):';
+  if (goals.length > 0) {
+    block += `\n✓ CONFIRMED GOALS — these were verified as real goals in past footage from the same camera setup (${goals.length} examples). When you see similar patterns, INCLUDE them:\n`;
+    block += goals.slice(-10).map(e => `  - At ${e.ts} in a match (${e.scorer?'scorer: '+e.scorer:''})`).join('\n');
+  }
+  if (falses.length > 0) {
+    block += `\n✗ FALSE POSITIVES — these were flagged by Gemini but turned out NOT to be goals (${falses.length} examples). Be more careful about similar situations:\n`;
+    block += falses.slice(-10).map(e => `  - At ${e.ts} in a match — this was NOT a goal despite appearing similar`).join('\n');
+  }
+  if (goals.length > 0 || falses.length > 0) {
+    const ratio = goals.length / Math.max(1, goals.length + falses.length);
+    if (ratio < 0.3) block += '\n⚠ Note: Historical data shows a HIGH false positive rate — be slightly more selective but still err towards inclusion.';
+    else if (ratio > 0.8) block += '\n✓ Note: Historical data shows HIGH accuracy — your detections have been reliable.';
+  }
+  return block;
+}
+
 function copyGeminiLog() {
   const el = document.getElementById('gemini-log');
   const text = [...el.querySelectorAll('span')].map(s => s.textContent).join('\n');
@@ -2072,7 +2231,16 @@ async function runGeminiDetection() {
   prog.style.display = 'block';
   document.getElementById('gemini-log').innerHTML = '';
   document.getElementById('gemini-found').style.display = 'none';
+  const fpEl = document.getElementById('feedback-panel'); if(fpEl) fpEl.style.display='none';
   gSetP(0);
+
+  // Log feedback that will be injected
+  const _existingFb = loadFeedback();
+  if (_existingFb.length > 0) {
+    const _g = _existingFb.filter(e=>e.verdict==='goal').length;
+    const _f = _existingFb.filter(e=>e.verdict==='false').length;
+    gLog(`🧠 Injecting ${_existingFb.length} learned examples (${_g} ✓ goals, ${_f} ✗ false positives) into prompt…`);
+  }
 
 
 
@@ -2084,58 +2252,57 @@ async function runGeminiDetection() {
     gLog(`🤖 Using model: ${_bestModel} (play detection)`);
     gLog(`📋 Processing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''}…`);
 
-    const allTimestamps = [];
-    let timeOffsetS = 0; // cumulative time offset across files
+    // Pre-compute durations and offsets for all files upfront so we can parallelise
+    const durations = await Promise.all(filesToProcess.map(f => getVideoDuration(f)));
+    const offsets = durations.reduce((acc, d) => { acc.push((acc[acc.length-1]||0) + (acc.length?durations[acc.length-1]:0)); return acc; }, [0]).slice(0, filesToProcess.length);
+    // simpler offset calc:
+    const fileOffsetsSecs = [];
+    let _off = 0;
+    for (const d of durations) { fileOffsetsSecs.push(_off); _off += d; }
 
-    for (let fi = 0; fi < filesToProcess.length; fi++) {
-      const f = filesToProcess[fi];
-      const fileSize = f.size;
+    gLog(`⚡ Running ${filesToProcess.length} file${filesToProcess.length>1?'s':''} in parallel…`);
+    gSetP(10);
+
+    // Process all files in parallel — upload + detect simultaneously
+    const playConfig = { wantGoals: true, teamDescGoals: null };
+    const perFileResults = await Promise.all(filesToProcess.map(async (f, fi) => {
+      const timeOffsetS = fileOffsetsSecs[fi];
+      const dur = durations[fi];
       const fileLabel = filesToProcess.length > 1 ? `File ${fi+1}/${filesToProcess.length}: ${f.name}` : f.name;
 
-      gLog(`\n📦 ${fileLabel} (${fmtBytes(fileSize)})`);
+      gLog(`\n📦 ${fileLabel} (${fmtBytes(f.size)}, match ${fmtTime(timeOffsetS)}–${fmtTime(timeOffsetS+dur)})`);
 
-      if (fileSize > MAX_SIZE) {
-        gLog(`  ⚠ Skipping — file exceeds 95MB limit. Please trim and re-upload.`);
-        continue;
+      if (f.size > MAX_SIZE) {
+        gLog(`  ⚠ [${fi+1}] Skipping — exceeds 95MB. Run Step 1b compression first.`);
+        return [];
       }
 
-      const dur = await getVideoDuration(f);
-      gLog(`  ⏱ Duration: ${fmtTime(dur)}${timeOffsetS > 0 ? ` (match time ${fmtTime(timeOffsetS)}–${fmtTime(timeOffsetS + dur)})` : ''}`);
-
-      gLog(`  📤 Uploading…`);
-      gSetP(Math.round((fi / filesToProcess.length) * 60));
-
+      gLog(`  📤 [${fi+1}] Uploading…`);
       let fileUri;
       try {
         fileUri = await uploadToGeminiFiles(f, f.type || 'video/mp4', fi + 1, filesToProcess.length);
       } catch(e) {
-        gLog(`  ❌ Upload failed: ${e.message}`);
-        if (e.message.includes('API key')) { gLog('❌ Invalid API key — please update via admin.html'); break; }
-        timeOffsetS += dur;
-        continue;
+        gLog(`  ❌ [${fi+1}] Upload failed: ${e.message}`);
+        return [];
       }
 
-      gLog(`  ✓ Uploaded. Asking Gemini to find goals…`);
-      gSetP(Math.round((fi / filesToProcess.length) * 60 + 30));
-
+      gLog(`  🤖 [${fi+1}] Analysing for goals…`);
       let rawTimestamps;
       try {
-        const playConfig = { wantGoals: true, wantSaves: false, wantDribbles: false, wantPassing: false, dribbleSecs: 2, passCount: 2, teamDescGoals: null, teamDescDribbles: null, teamDescPassing: null };
         rawTimestamps = await askGeminiForGoals(fileUri, timeOffsetS, fi + 1, filesToProcess.length, f.type || 'video/mp4', playConfig);
       } catch(e) {
-        gLog(`  ⚠ Analysis failed: ${e.message}`);
+        gLog(`  ⚠ [${fi+1}] Analysis failed: ${e.message}`);
         await deleteGeminiFile(fileUri).catch(()=>{});
-        timeOffsetS += dur;
-        continue;
+        return [];
       }
 
-      gLog(`  ✓ Found ${rawTimestamps.length} play${rawTimestamps.length !== 1 ? 's' : ''} in this file`);
-      if (rawTimestamps.length) gLog(`    → ${rawTimestamps.map(r => r.ts + ' ' + r.label).join(', ')}`);
-      allTimestamps.push(...rawTimestamps);
-
+      gLog(`  ✓ [${fi+1}] Found ${rawTimestamps.length} goal${rawTimestamps.length!==1?'s':''}`);
+      if (rawTimestamps.length) gLog(`    → ${rawTimestamps.map(r=>r.ts).join(', ')}`);
       await deleteGeminiFile(fileUri).catch(()=>{});
-      timeOffsetS += dur; // advance match clock for next file
-    }
+      return rawTimestamps;
+    }));
+
+    const allTimestamps = perFileResults.flat();
 
     gSetP(95);
 
@@ -2172,10 +2339,13 @@ async function runGeminiDetection() {
       checkReady();
 
       const found = document.getElementById('gemini-found');
-      found.textContent = `✓ ${added} play${added!==1?'s':''} added to timeline — scroll down to review.`;
+      found.textContent = `✓ ${added} goal${added!==1?'s':''} added to timeline — mark each one below then scroll down to review.`;
       const lock = document.getElementById('wholematch-lock');
       if (lock) lock.style.display = 'none';
       found.style.display = 'block';
+
+      // Show feedback panel for this run's detections
+      buildFeedbackPanel(deduped);
     }
 
   } catch(err) {
@@ -2300,38 +2470,38 @@ async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mi
   // ── GOALS: dedicated separate call with maximally permissive prompt ──────
   if (cfg.wantGoals) {
     const teamNote = cfg.teamDescGoals ? `\nTEAM: ${teamFilter(cfg.teamDescGoals)}` : '';
+    const feedbackBlock = buildFeedbackPromptBlock();
     const goalsPrompt = `You are watching a football match video.${teamNote}
 ${offsetNote}
 
-YOUR ONLY JOB: find every possible moment a goal may have been scored.
+YOUR ONLY JOB: flag every moment where a goal may have been scored. This footage is being used to collect training data, so returning too many timestamps is far better than missing any. False positives are not just acceptable — they are actively helpful. Only miss a timestamp if you are completely certain nothing happened.
 
-YOU MUST BE EXTREMELY GENEROUS. Return EVERY timestamp where there is ANY chance of a goal. You will not be penalised for false positives — only for missing real goals.
+VISUAL IS YOUR PRIMARY SIGNAL — the video is sampled at 5fps so ball movement is visible. Look carefully for:
+- The ball crossing the goal line or entering the net — even partially
+- The net moving, rippling, bulging or swinging from any impact
+- The ball visible inside or behind the net at any point
+- The goalkeeper diving or reacting to a shot
+- Any player raising both arms, jumping, or turning to celebrate
+- Players from either team running towards each other in celebration
+- A kick-off restart from the centre circle (strong indicator a goal just occurred)
+- The referee pointing to the centre spot
+- Any sudden change in player positioning or energy near the goal
 
-AUDIO IS YOUR PRIMARY SIGNAL — listen carefully throughout the entire video:
-- A sudden surge in crowd noise or volume spike — this is the strongest goal indicator
-- The crowd erupting, cheering, or sustained roaring after a quiet period
-- Commentary voice rising sharply in pitch or excitement
-- A commentator shouting or elongating a word (even if you cannot make out the words)
-- Any loud collective reaction from spectators
-- A whistle blast followed by silence then crowd noise building
-- The general atmosphere suddenly changing from tense/quiet to loud/euphoric
+AUDIO IS A STRONG SECONDARY SIGNAL — treat any of these as additional evidence:
+- A sudden crowd noise spike or surge in volume
+- Sustained crowd roaring or cheering
+- Commentary voice rising sharply or a commentator reacting excitedly
+- A whistle followed by a change in crowd atmosphere
+- Any collective crowd reaction that feels like a response to something
 
-VISUAL signals to also watch for (secondary to audio — video is sampled at 5fps so ball movement is visible):
-- The ball entering the goal or crossing the goal line
-- The net moving, rippling, bulging or swinging after an impact
-- The ball visible inside or behind the net
-- Any player raising arms, running or celebrating
-- Players from either team gathering or reacting
-- A kick-off from the centre circle
-- The referee pointing anywhere
-- Any moment that feels like a reaction to something
+FLAG A TIMESTAMP if you see OR hear ANY single signal from either list above — you do not need both visual and audio confirmation. One signal is enough. When in doubt, always include it.
 
-CRITICAL: If the audio spikes or the crowd reacts at ANY point — flag it immediately, even if the visual is unclear or the ball is not visible. The audio reaction IS the goal signal. A compressed video at low frame rate may not show the ball clearly but the audio crowd reaction will always be there.
+${feedbackBlock}
 
 RESPONSE: Return ONLY a comma-separated list of MM:SS timestamps, e.g.: 00:53, 01:22, 02:45
-If truly nothing happens and there is no crowd reaction at all, reply: NO GOALS`;
+If you are completely certain nothing happened anywhere in the video, reply: NO GOALS`;
 
-    gLog(`  ⚽ Running dedicated goal detection (5fps, audio-primary)…`);
+    gLog(`  ⚽ Running dedicated goal detection (5fps, visual-primary)…`);
     const text = await withRetry(() => callGeminiGoals(goalsPrompt), 'goal detection');
     gLog(`  📝 Goals response: ${text.slice(0, 150)}`);
     if (text && !text.toUpperCase().includes('NO GOALS')) {
@@ -2346,13 +2516,14 @@ If truly nothing happens and there is no crowd reaction at all, reply: NO GOALS`
 // Retry a fetch-based fn up to maxRetries times on 429/500 errors
 // ── Best model selection ─────────────────────────────────────────────────
 // Priority order: newest/best first. We pick the first one available on the key.
+// Tier 1 billing: 150-300 RPM. Use latest/best model available — RPD not a concern at match frequency.
 const MODEL_PRIORITY = [
-  'gemini-3.1-pro-preview',
+  'gemini-3.1-pro-preview',    // Latest and best — use this preferentially
   'gemini-3-flash-preview',
   'gemini-3.1-flash-lite-preview',
   'gemini-2.5-pro',
   'gemini-2.5-flash',
-  'gemini-2.0-flash-001',
+  'gemini-2.5-flash-lite',
 ];
 let _bestModel = null; // cached until next detection run
 
@@ -2963,6 +3134,6 @@ renderTsPanel(); // initialise Step 2 panel
   img.onload = () => { img.style.display = 'block'; };
 })();
 </script>
-<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-16 23:28 UTC</div>
+<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 00:38 UTC</div>
 </body>
 </html>
