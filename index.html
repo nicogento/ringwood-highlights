@@ -672,58 +672,7 @@ function _markFileComplete(fileIdx) {
   if (pctEl) { pctEl.textContent = '✓ done'; pctEl.style.color = '#70c870'; }
 }
 
-const TRANSCODE_SEGMENTS = 4; // parallel compression segments per file
-
 // Encode one time segment of a file; returns sorted array of {chunk, meta}
-async function transcodeSegment(file, startT, endT, outW, outH, encConfig, segLabel, progressCb) {
-  const url = URL.createObjectURL(file);
-  const video = document.createElement('video');
-  video.src = url; video.muted = true; video.preload = 'auto';
-  await new Promise(res => { video.onloadeddata = res; video.load(); });
-
-  const canvas = document.createElement('canvas');
-  canvas.width = outW; canvas.height = outH;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-  const USEC = 1_000_000;
-  const frameInterval = 1 / TRANSCODE_FPS;
-  const encodedChunks = []; // { chunk, meta, ts }
-  let frameNum = 0;
-
-  const encoder = new VideoEncoder({
-    output: (chunk, meta) => encodedChunks.push({ chunk, meta, ts: chunk.timestamp }),
-    error: (e) => { throw new Error('Encoder: ' + e.message); }
-  });
-  encoder.configure(encConfig);
-
-  const totalSegFrames = Math.ceil((endT - startT) * TRANSCODE_FPS);
-  for (let t = startT; t < endT - 0.05; t += frameInterval) {
-    await new Promise((res, rej) => { video.onseeked = res; video.onerror = rej; video.currentTime = t; });
-    ctx.drawImage(video, 0, 0, outW, outH);
-    const bitmap = await createImageBitmap(canvas);
-    const vf = new VideoFrame(bitmap, {
-      timestamp: Math.round(t * USEC),
-      duration:  Math.round(frameInterval * USEC),
-    });
-    bitmap.close();
-    // Always keyframe at segment start so merge works cleanly
-    const isKey = frameNum === 0 || frameNum % (TRANSCODE_FPS * 2) === 0;
-    encoder.encode(vf, { keyFrame: isKey });
-    vf.close();
-    frameNum++;
-    if (encoder.encodeQueueSize > 10) await encoder.flush();
-    if (progressCb && frameNum % 10 === 0) progressCb(frameNum / totalSegFrames);
-  }
-
-  await encoder.flush();
-  encoder.close();
-  video.src = ''; URL.revokeObjectURL(url);
-
-  // Sort by timestamp (encoder may reorder)
-  encodedChunks.sort((a, b) => a.ts - b.ts);
-  return encodedChunks;
-}
-
 async function transcodeFile(file, fileIdx, totalFiles) {
   tLog(`\n📹 [${fileIdx+1}/${totalFiles}] ${file.name} (${fmtBytes(file.size)})`);
 
@@ -740,9 +689,10 @@ async function transcodeFile(file, fileIdx, totalFiles) {
   const outW = Math.floor(origW * scale / 2) * 2;
   const outH = Math.floor(origH * scale / 2) * 2;
   const bitrate = calcBitrate(duration);
+  const totalFrames = Math.ceil(duration * TRANSCODE_FPS);
 
-  tLog(`  [${fileIdx+1}] ${origW}×${origH}→${outW}×${outH}, ${duration.toFixed(0)}s, ${Math.round(bitrate/1000)}kbps, ${TRANSCODE_SEGMENTS} segments`);
-  _initFileGrid(fileIdx, file.name, TRANSCODE_SEGMENTS);
+  tLog(`  [${fileIdx+1}] ${origW}×${origH}→${outW}×${outH}, ${duration.toFixed(0)}s @ ${TRANSCODE_FPS}fps, ${Math.round(bitrate/1000)}kbps`);
+  _initFileGrid(fileIdx, file.name, 1); // single bar per file
 
   // Detect codec
   const avcConfig = { codec:'avc1.42E01F', width:outW, height:outH, bitrate, framerate:TRANSCODE_FPS, avc:{ format:'avc' } };
@@ -750,35 +700,57 @@ async function transcodeFile(file, fileIdx, totalFiles) {
   let encConfig, muxCodec;
   if ((await VideoEncoder.isConfigSupported(avcConfig)).supported) {
     encConfig = avcConfig; muxCodec = 'avc';
-    tLog(`  🎞 Codec: H.264`);
+    tLog(`  🎞 [${fileIdx+1}] Codec: H.264`);
   } else if ((await VideoEncoder.isConfigSupported(vp9Config)).supported) {
     encConfig = vp9Config; muxCodec = 'vp9';
-    tLog(`  🎞 Codec: VP9`);
+    tLog(`  🎞 [${fileIdx+1}] Codec: VP9`);
   } else throw new Error('No supported encoder found.');
 
-  // Build segment time ranges
-  const segDur = duration / TRANSCODE_SEGMENTS;
-  const segments = Array.from({ length: TRANSCODE_SEGMENTS }, (_, i) => ({
-    startT: i * segDur,
-    endT:   Math.min((i + 1) * segDur, duration),
-    label:  `seg${i+1}`
-  }));
-
-  // Run all segments in parallel — progress tracked per segment in the grid
-  const segResults = await Promise.all(segments.map((seg, i) =>
-    transcodeSegment(file, seg.startT, seg.endT, outW, outH, encConfig, seg.label,
-      (pct) => _updateSegProgress(fileIdx, i, pct))
-  ));
-
-  tLog(`  🔧 Merging ${TRANSCODE_SEGMENTS} segments…`);
-
-  // Merge all chunks in timestamp order into one muxer
+  // Single muxer + encoder per file — no merging needed, no codec config conflicts
   const { Muxer, ArrayBufferTarget } = Mp4Muxer;
   const target = new ArrayBufferTarget();
   const muxer = new Muxer({ target, video: { codec: muxCodec, width: outW, height: outH }, fastStart: 'in-memory' });
-  const allChunks = segResults.flat().sort((a, b) => a.ts - b.ts);
-  allChunks.forEach(({ chunk, meta }) => muxer.addVideoChunk(chunk, meta));
+
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (e) => { throw new Error('Encoder error: ' + e.message); }
+  });
+  encoder.configure(encConfig);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outW; canvas.height = outH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const video = document.createElement('video');
+  const srcURL = URL.createObjectURL(file);
+  video.src = srcURL; video.muted = true; video.preload = 'auto';
+  await new Promise(res => { video.onloadeddata = res; video.load(); });
+
+  const USEC = 1_000_000;
+  const frameInterval = 1 / TRANSCODE_FPS;
+  let frameNum = 0;
+
+  for (let t = 0; t < duration - 0.1; t += frameInterval) {
+    await new Promise((res, rej) => { video.onseeked = res; video.onerror = rej; video.currentTime = t; });
+    ctx.drawImage(video, 0, 0, outW, outH);
+    const bitmap = await createImageBitmap(canvas);
+    const vf = new VideoFrame(bitmap, {
+      timestamp: Math.round(t * USEC),
+      duration:  Math.round(frameInterval * USEC),
+    });
+    bitmap.close();
+    const isKey = frameNum % (TRANSCODE_FPS * 2) === 0;
+    encoder.encode(vf, { keyFrame: isKey });
+    vf.close();
+    frameNum++;
+    if (encoder.encodeQueueSize > 10) await encoder.flush();
+    // Update progress bar for this file
+    if (frameNum % 5 === 0) _updateSegProgress(fileIdx, 0, frameNum / totalFrames);
+  }
+
+  await encoder.flush();
+  encoder.close();
   muxer.finalize();
+  video.src = ''; URL.revokeObjectURL(srcURL);
 
   const blob = new Blob([target.buffer], { type: 'video/mp4' });
   const outName = file.name.replace(/\.[^.]+$/, '') + '_compressed.mp4';
@@ -811,7 +783,7 @@ async function runTranscode() {
   const needsTranscode = allFiles.filter(f => f.size > MAX);
 
   tLog(`🚀 Starting compression — ${needsTranscode.length} file${needsTranscode.length!==1?'s':''} to compress`);
-  tLog(`⚡ All files compressed in parallel with ${TRANSCODE_SEGMENTS} segments each. Keep this tab open.`);
+  tLog(`⚡ All ${allFiles.length} file${allFiles.length>1?'s':''} compressing in parallel. Keep this tab open.`);
 
   try {
     // Run all files in parallel — each file runs its own 4 parallel segments
@@ -2450,43 +2422,61 @@ function _uploadRelease() {
 }
 
 async function uploadToGeminiFiles(blob, mimeType, chunkNum, totalChunks) {
-  // Multipart upload — works from browsers (no custom X-Goog headers = no CORS block)
-  const metadata = JSON.stringify({ file: { display_name: `rtfc_chunk_${chunkNum}_of_${totalChunks}` } });
-  const body = new FormData();
-  body.append('metadata', new Blob([metadata], { type: 'application/json' }));
-  body.append('file', blob, `chunk_${chunkNum}.mp4`);
+  const MAX_UPLOAD_RETRIES = 3;
 
-  await _uploadAcquire();
-  gLog(`  📤 [${chunkNum}] Upload slot acquired, sending ${fmtBytes(blob.size)}…`);
-  try {
-    // 5-minute timeout on upload fetch
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
-    let res;
+  for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+    await _uploadAcquire();
+    // Small stagger so queued uploads don't all hammer the API simultaneously
+    await new Promise(r => setTimeout(r, (chunkNum - 1) * 500));
+    gLog(`  📤 [${chunkNum}] Uploading ${fmtBytes(blob.size)}${attempt > 1 ? ` (attempt ${attempt})` : ''}…`);
+
     try {
-      res = await fetch(
-        gUrl(`/upload/v1beta/files?uploadType=multipart&key=${geminiKey}`),
-        { method: 'POST', body, signal: controller.signal }
-      );
-    } finally {
-      clearTimeout(timeout);
+      // Build FormData fresh each attempt — stale FormData can cause "Failed to fetch"
+      const metadata = JSON.stringify({ file: { display_name: `rtfc_chunk_${chunkNum}_of_${totalChunks}` } });
+      const body = new FormData();
+      body.append('metadata', new Blob([metadata], { type: 'application/json' }));
+      body.append('file', blob, `chunk_${chunkNum}.mp4`);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000); // 6 min timeout
+      let res;
+      try {
+        res = await fetch(
+          gUrl(`/upload/v1beta/files?uploadType=multipart&key=${geminiKey}`),
+          { method: 'POST', body, signal: controller.signal }
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!res.ok) {
+        const err = await res.text();
+        if (res.status === 400 || res.status === 403) throw new Error('API key not valid — please check and re-enter');
+        throw new Error(`Upload failed (${res.status}): ${err.slice(0,300)}`);
+      }
+
+      const data = await res.json();
+      const fileUri = data?.file?.uri;
+      if (!fileUri) throw new Error('No file URI in upload response');
+
+      gLog(`  ✓ [${chunkNum}] Uploaded. Waiting for Gemini processing…`);
+      const uri = await waitForFileActive(fileUri, chunkNum);
+      _uploadRelease();
+      return uri;
+
+    } catch(e) {
+      _uploadRelease();
+      const isNetworkErr = e.name === 'TypeError' || e.message.includes('Failed to fetch') || e.name === 'AbortError';
+      if (isNetworkErr && attempt < MAX_UPLOAD_RETRIES) {
+        const wait = attempt * 5000;
+        gLog(`  ⚠ [${chunkNum}] Network error — retrying in ${wait/1000}s…`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      throw e;
     }
-
-    if (!res.ok) {
-      const err = await res.text();
-      if (res.status === 400 || res.status === 403) throw new Error('API key not valid — please check and re-enter');
-      throw new Error(`Upload failed (${res.status}): ${err.slice(0,300)}`);
-    }
-
-    const data = await res.json();
-    const fileUri = data?.file?.uri;
-    if (!fileUri) throw new Error('No file URI in upload response');
-
-    gLog(`  ✓ [${chunkNum}] Uploaded. Waiting for Gemini processing…`);
-    return await waitForFileActive(fileUri, chunkNum);
-  } finally {
-    _uploadRelease();
   }
+  throw new Error(`Upload failed after ${MAX_UPLOAD_RETRIES} attempts`);
 }
 
 async function waitForFileActive(fileUri, chunkNum) {
@@ -3248,6 +3238,6 @@ renderTsPanel(); // initialise Step 2 panel
   img.onload = () => { img.style.display = 'block'; };
 })();
 </script>
-<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 01:47 UTC</div>
+<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 02:22 UTC</div>
 </body>
 </html>
