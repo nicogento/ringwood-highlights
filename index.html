@@ -297,10 +297,14 @@ header {
         <span>⚡</span> Compress Videos for Gemini
       </button>
       <div id="transcode-prog" style="display:none;margin-top:0.75rem;">
+        <!-- Per-file progress grids, inserted dynamically -->
+        <div id="transcode-file-grids" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.6rem;"></div>
+        <!-- Overall bar -->
         <div style="background:rgba(255,255,255,0.06);border-radius:99px;height:5px;margin-bottom:0.5rem;">
-          <div id="transcode-prog-fill" style="height:100%;background:linear-gradient(90deg,#f57c00,#e65100);border-radius:99px;width:0%;transition:width 0.3s;"></div>
+          <div id="transcode-prog-fill" style="height:100%;background:linear-gradient(90deg,#f57c00,#34a853);border-radius:99px;width:0%;transition:width 0.6s ease;"></div>
         </div>
-        <div id="transcode-log" style="font-size:0.72rem;color:#888;max-height:8rem;overflow-y:auto;font-family:monospace;"></div>
+        <div id="transcode-overall-label" style="font-size:0.7rem;color:#888;text-align:center;margin-bottom:0.4rem;"></div>
+        <div id="transcode-log" style="font-size:0.68rem;color:#666;max-height:5rem;overflow-y:auto;font-family:monospace;"></div>
       </div>
       <div id="transcode-done" style="display:none;background:rgba(52,168,83,0.08);border:1px solid rgba(52,168,83,0.25);border-radius:6px;padding:0.55rem 0.75rem;margin-top:0.6rem;font-size:0.73rem;color:#70c870;"></div>
       <div id="transcode-downloads" style="display:none;margin-top:0.6rem;flex-direction:column;gap:0.35rem;"></div>
@@ -533,6 +537,7 @@ async function loadVideos(files) {
     document.getElementById('transcode-done').style.display = 'none';
     document.getElementById('transcode-downloads').style.display = 'none';
     document.getElementById('transcode-log').innerHTML = '';
+    document.getElementById('transcode-file-grids').innerHTML = '';
     document.getElementById('transcode-prog-fill').style.width = '0%';
     document.getElementById('transcode-btn').disabled = false;
   } else {
@@ -597,6 +602,70 @@ function tLog(msg) {
 function tSetP(pct) {
   document.getElementById('transcode-prog-fill').style.width = Math.min(100,pct)+'%';
 }
+// Master progress state: fileIdx -> segIdx -> 0..1
+const _transcodeProgress = {};
+function _updateMasterProgress() {
+  const vals = Object.values(_transcodeProgress).flatMap(segs => Object.values(segs));
+  if (!vals.length) return;
+  const overall = vals.reduce((a,b)=>a+b,0) / vals.length * 100;
+  tSetP(overall);
+  const pct = Math.round(overall);
+  const lbl = document.getElementById('transcode-overall-label');
+  if (lbl) lbl.textContent = pct < 100 ? `Compressing… ${pct}%` : 'Finalising…';
+}
+function _initFileGrid(fileIdx, fileName, numSegs) {
+  _transcodeProgress[fileIdx] = {};
+  for (let s = 0; s < numSegs; s++) _transcodeProgress[fileIdx][s] = 0;
+  const grids = document.getElementById('transcode-file-grids');
+  if (!grids) return;
+  const row = document.createElement('div');
+  row.id = `tgrid-${fileIdx}`;
+  row.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;';
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:0.68rem;color:#999;display:flex;justify-content:space-between;';
+  label.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%;">${fileName}</span><span id="tgrid-pct-${fileIdx}" style="flex-shrink:0;color:#f57c00;">0%</span>`;
+  const segsRow = document.createElement('div');
+  segsRow.style.cssText = 'display:flex;gap:2px;height:6px;border-radius:4px;overflow:hidden;';
+  for (let s = 0; s < numSegs; s++) {
+    const seg = document.createElement('div');
+    seg.id = `tseg-${fileIdx}-${s}`;
+    seg.style.cssText = 'flex:1;background:rgba(255,255,255,0.07);border-radius:2px;transition:background 0.3s;position:relative;overflow:hidden;';
+    const fill = document.createElement('div');
+    fill.id = `tseg-fill-${fileIdx}-${s}`;
+    fill.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,#f57c00,#e65100);transition:width 0.4s;';
+    seg.appendChild(fill);
+    segsRow.appendChild(seg);
+  }
+  row.appendChild(label);
+  row.appendChild(segsRow);
+  grids.appendChild(row);
+}
+function _updateSegProgress(fileIdx, segIdx, pct) {
+  if (!_transcodeProgress[fileIdx]) return;
+  _transcodeProgress[fileIdx][segIdx] = pct;
+  // Update individual segment fill
+  const fill = document.getElementById(`tseg-fill-${fileIdx}-${segIdx}`);
+  if (fill) fill.style.width = Math.round(pct*100)+'%';
+  if (pct >= 1) {
+    const seg = document.getElementById(`tseg-${fileIdx}-${segIdx}`);
+    if (seg) seg.style.background = 'rgba(52,168,83,0.4)';
+  }
+  // Update file % label
+  const fileVals = Object.values(_transcodeProgress[fileIdx]);
+  const filePct = Math.round(fileVals.reduce((a,b)=>a+b,0) / fileVals.length * 100);
+  const pctEl = document.getElementById(`tgrid-pct-${fileIdx}`);
+  if (pctEl) {
+    pctEl.textContent = filePct+'%';
+    pctEl.style.color = filePct >= 100 ? '#70c870' : '#f57c00';
+  }
+  _updateMasterProgress();
+}
+function _markFileComplete(fileIdx) {
+  const numSegs = Object.keys(_transcodeProgress[fileIdx]||{}).length;
+  for (let s = 0; s < numSegs; s++) _updateSegProgress(fileIdx, s, 1);
+  const pctEl = document.getElementById(`tgrid-pct-${fileIdx}`);
+  if (pctEl) { pctEl.textContent = '✓ done'; pctEl.style.color = '#70c870'; }
+}
 
 const TRANSCODE_SEGMENTS = 4; // parallel compression segments per file
 
@@ -650,7 +719,7 @@ async function transcodeSegment(file, startT, endT, outW, outH, encConfig, segLa
   return encodedChunks;
 }
 
-async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, overallProgressSlice) {
+async function transcodeFile(file, fileIdx, totalFiles) {
   tLog(`\n📹 [${fileIdx+1}/${totalFiles}] ${file.name} (${fmtBytes(file.size)})`);
 
   if (typeof VideoEncoder === 'undefined') throw new Error('WebCodecs not supported. Use Chrome 94+.');
@@ -667,8 +736,8 @@ async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, ove
   const outH = Math.floor(origH * scale / 2) * 2;
   const bitrate = calcBitrate(duration);
 
-  tLog(`  📐 ${origW}×${origH} → ${outW}×${outH}, ${duration.toFixed(0)}s @ ${TRANSCODE_FPS}fps, ${Math.round(bitrate/1000)}kbps`);
-  tLog(`  ⚡ Splitting into ${TRANSCODE_SEGMENTS} parallel segments…`);
+  tLog(`  [${fileIdx+1}] ${origW}×${origH}→${outW}×${outH}, ${duration.toFixed(0)}s, ${Math.round(bitrate/1000)}kbps, ${TRANSCODE_SEGMENTS} segments`);
+  _initFileGrid(fileIdx, file.name, TRANSCODE_SEGMENTS);
 
   // Detect codec
   const avcConfig = { codec:'avc1.42E01F', width:outW, height:outH, bitrate, framerate:TRANSCODE_FPS, avc:{ format:'avc' } };
@@ -690,20 +759,10 @@ async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, ove
     label:  `seg${i+1}`
   }));
 
-  // Track per-segment progress
-  const segProgress = new Array(TRANSCODE_SEGMENTS).fill(0);
-  const updateProgress = (segIdx, pct) => {
-    segProgress[segIdx] = pct;
-    const overall = segProgress.reduce((a,b)=>a+b,0) / TRANSCODE_SEGMENTS;
-    tSetP(overallProgressBase + overall * overallProgressSlice);
-  };
-
-  tLog(`  ⏳ Encoding ${TRANSCODE_SEGMENTS} segments in parallel…`);
-
-  // Run all segments in parallel
+  // Run all segments in parallel — progress tracked per segment in the grid
   const segResults = await Promise.all(segments.map((seg, i) =>
     transcodeSegment(file, seg.startT, seg.endT, outW, outH, encConfig, seg.label,
-      (pct) => updateProgress(i, pct))
+      (pct) => _updateSegProgress(fileIdx, i, pct))
   ));
 
   tLog(`  🔧 Merging ${TRANSCODE_SEGMENTS} segments…`);
@@ -719,7 +778,8 @@ async function transcodeFile(file, fileIdx, totalFiles, overallProgressBase, ove
   const blob = new Blob([target.buffer], { type: 'video/mp4' });
   const outName = file.name.replace(/\.[^.]+$/, '') + '_compressed.mp4';
   const outFile = new File([blob], outName, { type: 'video/mp4' });
-  tLog(`  ✅ Done: ${fmtBytes(file.size)} → ${fmtBytes(blob.size)} (${Math.round(blob.size/file.size*100)}%)`);
+  _markFileComplete(fileIdx);
+  tLog(`  ✅ [${fileIdx+1}] ${fmtBytes(file.size)} → ${fmtBytes(blob.size)} (${Math.round(blob.size/file.size*100)}%)`);
   return outFile;
 }
 
@@ -730,6 +790,9 @@ async function runTranscode() {
   document.getElementById('transcode-done').style.display = 'none';
   document.getElementById('transcode-downloads').style.display = 'none';
   document.getElementById('transcode-log').innerHTML = '';
+  document.getElementById('transcode-file-grids').innerHTML = '';
+  const _ol = document.getElementById('transcode-overall-label'); if(_ol) _ol.textContent = '';
+  Object.keys(_transcodeProgress).forEach(k => delete _transcodeProgress[k]);
   tSetP(0);
 
   // Check mp4-muxer loaded
@@ -741,7 +804,6 @@ async function runTranscode() {
   const MAX = 95 * 1024 * 1024;
   const allFiles = videoFiles.length > 0 ? [...videoFiles] : [videoFile];
   const needsTranscode = allFiles.filter(f => f.size > MAX);
-  const slicePerFile = 100 / allFiles.length;
 
   tLog(`🚀 Starting compression — ${needsTranscode.length} file${needsTranscode.length!==1?'s':''} to compress`);
   tLog(`⚡ All files compressed in parallel with ${TRANSCODE_SEGMENTS} segments each. Keep this tab open.`);
@@ -750,7 +812,7 @@ async function runTranscode() {
     // Run all files in parallel — each file runs its own 4 parallel segments
     const outFiles = await Promise.all(allFiles.map((f, i) => {
       if (f.size > MAX) {
-        return transcodeFile(f, i, allFiles.length, i * slicePerFile, slicePerFile);
+        return transcodeFile(f, i, allFiles.length);
       } else {
         tLog(`\n✓ [${i+1}/${allFiles.length}] ${f.name} — already under limit, keeping original`);
         return Promise.resolve(f);
@@ -3134,6 +3196,6 @@ renderTsPanel(); // initialise Step 2 panel
   img.onload = () => { img.style.display = 'block'; };
 })();
 </script>
-<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 00:38 UTC</div>
+<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 00:52 UTC</div>
 </body>
 </html>
