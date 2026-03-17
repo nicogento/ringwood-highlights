@@ -2579,18 +2579,26 @@ async function askGeminiForGoals(fileUri, timeOffsetS, chunkNum, totalChunks, mi
     const goalsPrompt = `You are watching a football match video.${teamNote}
 ${offsetNote}
 
+CRITICAL CAMERA SETUP — read this carefully before analysing:
+This video is recorded by a single wide-angle camera mounted in the stands, pointing across the width of the pitch. This means:
+1. THE GOALS ARE ALWAYS ON THE LEFT AND RIGHT EDGES OF THE VIDEO — never in the centre. A goal can only be scored when the ball enters the net at the far left or far right of the frame.
+2. THERE IS A GOAL NET VISIBLE IN THE CENTRE/BACKGROUND OF THE VIDEO — this is the net behind the camera position and is NOT part of the active pitch. Any net movement or ball near this central background net should be completely ignored — it is not relevant to goal detection.
+3. THE CAMERA PANS LEFT AND RIGHT to follow the ball. This means the goals will appear at different horizontal positions depending on where the camera is pointing. Sometimes a goal will be right at the edge of the frame, sometimes partially out of shot. A goal may happen when the camera is panning towards it.
+
 YOUR ONLY JOB: flag every moment where a goal may have been scored. This footage is being used to collect training data, so returning too many timestamps is far better than missing any. False positives are not just acceptable — they are actively helpful. Only miss a timestamp if you are completely certain nothing happened.
 
-VISUAL IS YOUR PRIMARY SIGNAL — the video is sampled at 5fps so ball movement is visible. Look carefully for:
-- The ball crossing the goal line or entering the net — even partially
-- The net moving, rippling, bulging or swinging from any impact
-- The ball visible inside or behind the net at any point
-- The goalkeeper diving or reacting to a shot
+VISUAL IS YOUR PRIMARY SIGNAL — the video is sampled at 5fps so ball movement is visible. Look for:
+- The ball crossing the goal line or entering the net at the LEFT or RIGHT edge of the frame
+- The net at the LEFT or RIGHT edge of the frame moving, rippling or bulging from an impact
+- The ball visible inside or behind a net at the left or right side of the frame
+- The goalkeeper (at either the left or right side) diving or reacting to a shot
 - Any player raising both arms, jumping, or turning to celebrate
 - Players from either team running towards each other in celebration
 - A kick-off restart from the centre circle (strong indicator a goal just occurred)
 - The referee pointing to the centre spot
-- Any sudden change in player positioning or energy near the goal
+- Any sudden change in player positioning or energy near either goal
+
+IGNORE: Any net movement or ball near the net in the CENTRE or BACKGROUND of the video — this is not a goal.
 
 AUDIO IS A STRONG SECONDARY SIGNAL — treat any of these as additional evidence:
 - A sudden crowd noise spike or surge in volume
@@ -3240,6 +3248,6 @@ renderTsPanel(); // initialise Step 2 panel
   img.onload = () => { img.style.display = 'block'; };
 })();
 </script>
-<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 01:35 UTC</div>
+<div style="position:fixed;bottom:4px;right:6px;font-size:0.55rem;color:rgba(255,255,255,0.15);pointer-events:none;user-select:none;font-family:monospace;z-index:9999;">v2026-03-17 01:47 UTC</div>
 </body>
 </html>
